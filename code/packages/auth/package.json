@@ -1,5 +1,5 @@
 {
-  "name": "@repo/db",
+  "name": "@repo/auth",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,14 @@
   "scripts": {
     "check-types": "tsc --noEmit"
   },
-  "dependencies": {
-    "@repo/auth": "*"
-  },
   "devDependencies": {
     "@repo/typescript-config": "*",
     "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "@repo/db": "*",
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^25.9.1",
+    "bcrypt": "^6.0.0"
   }
 }

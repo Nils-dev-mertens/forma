@@ -1,6 +1,7 @@
 import express from "express"
 import type { RequestHandler } from "express"
 import { getData } from "@repo/db"
+import { get } from "@repo/auth"
 
 const app = express()
 
