@@ -1,5 +1,5 @@
 {
-  "name": "@repo/db",
+  "name": "@repo/generation",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,5 +12,12 @@
   "devDependencies": {
     "@repo/typescript-config": "*",
     "typescript": "5.9.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@repo/storage": "*",
+    "puppeteer": "^25.1.0"
   }
 }

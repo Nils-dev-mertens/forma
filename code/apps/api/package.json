@@ -5,15 +5,19 @@
   "private": true,
   "scripts": {
     "start": "bun index.ts",
-    "dev": "node --watch index.ts"
+    "dev": "bun --watch index.ts"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@types/express": "^5.0.6",
-    "@repo/db": "workspace:*",
     "@repo/auth": "workspace:*",
-    "express": "^5.2.1"
+    "@repo/db": "workspace:*",
+    "@repo/storage": "workspace:*",
+    "@repo/generation": "workspace:*",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "express": "^5.2.1",
+    "multer": "^2.1.1"
   }
 }
