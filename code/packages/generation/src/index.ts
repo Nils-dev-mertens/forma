@@ -1,3 +1,3 @@
-export { generateImageFromTemplate } from "./generation.ts";
-export { type TemplateGenerationInput } from "./generation.ts";
-export { generateAndStoreImageFromTemplate } from "./generationStore.ts"
+export { generateImageFromTemplate, renderTemplateStrict, type TemplateGenerationInput } from "./generation.ts";
+export { generateAndStoreImageFromTemplate, generateAndStoreImageFromTemplateStrict } from "./generationStore.ts"
+export { validateTemplateData, getTemplateFields, getUnusedFields, fillTemplate } from "./template.ts"

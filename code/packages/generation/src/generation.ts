@@ -2,6 +2,8 @@ import puppeteer from "puppeteer";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { fillTemplate, validateTemplateData, type StructuredData } from "./template.ts"
+import { getTemplate } from "@repo/storage";
+
 
 export interface TemplateGenerationInput {
     templatename: string;
@@ -26,9 +28,11 @@ export async function generateImageFromTemplate(input: TemplateGenerationInput) 
             deviceScaleFactor: 1,
         });
 
-        // Path to your local HTML file
-        const htmlPath = join(process.cwd(), input.templatename);
-        const htmlContent = readFileSync(htmlPath, "utf8");
+        // inside generateImageFromTemplate function
+        const htmlContent = await getTemplate(input.templatename);
+        if (!htmlContent) {
+            throw new Error(`Template file ${input.templatename} not found in storage`);
+        }
 
         // Set the HTML content directly
         const dataUrl = `data:text/html,${encodeURIComponent(fillTemplate(htmlContent, input.data))}`;
@@ -49,12 +53,13 @@ export async function generateImageFromTemplate(input: TemplateGenerationInput) 
         return screenshotBuffer;
 }
 
-export function renderTemplateStrict(
+export async function renderTemplateStrict(
 input: TemplateGenerationInput
 ) {
-    
-    const htmlPath = join(process.cwd(), input.templatename);
-    const htmlContent = readFileSync(htmlPath, "utf8");
+        const htmlContent = await getTemplate(input.templatename);
+        if (!htmlContent) {
+            throw new Error(`Template file ${input.templatename} not found in storage`);
+        }
 
     const validation = validateTemplateData(htmlContent, input.data);
 
@@ -64,5 +69,5 @@ input: TemplateGenerationInput
         );
     }
 
-    generateImageFromTemplate(input);
+    return await generateImageFromTemplate(input);
 }

@@ -2,12 +2,13 @@ import express from "express";
 import type { RequestHandler } from "express";
 import multer from "multer";
 import { getData } from "@repo/db";
-import { GenerateKey, CheckKey } from "@repo/auth";
-import { ensureDirs } from "@repo/storage";
+import { GenerateKey, CheckKey, generateRandomName } from "@repo/auth";
+import { ensureDirs, getGeneratedImage } from "@repo/storage";
 import { getProfilePhoto } from "@repo/storage";
-import { generateAndStoreImageFromTemplate, type TemplateGenerationInput } from "@repo/generation";
+import { generateAndStoreImageFromTemplate, generateAndStoreImageFromTemplateStrict, getTemplateFields, renderTemplateStrict, type TemplateGenerationInput } from "@repo/generation";
 import { GENERATED_IMAGES_DIR } from "@repo/storage";
 import { join } from "path";
+import { readFileSync } from "fs";
 
 const app = express();
 
@@ -47,7 +48,7 @@ app.get('/photos/:imagename', async (req, res) => {
   const imagename = req.params.imagename;
 
   try {
-    const imageBuffer = await getProfilePhoto(imagename);
+    const imageBuffer = await getGeneratedImage(imagename);
     if (!imageBuffer) {
       res.status(404).send('Image not found');
       return;
@@ -74,13 +75,31 @@ app.get('/photos/:imagename', async (req, res) => {
 app.post('/generate-image', async (req, res) => {
   try {
     const input: TemplateGenerationInput = req.body.input;
-    const imagename: string = req.body.imagename;
+    console.log(input);
+    const imagename: string = generateRandomName({length : 12, endsWith : ".png"});
     if (!input || !imagename) {
       res.status(400).send('Missing input or imagename');
       return;
     }
 
     await generateAndStoreImageFromTemplate(input, imagename);
+    res.json({ imagename });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Failed to generate image"});
+  }
+});
+
+app.post('/generate-image-strict', async (req, res) => {
+  try {
+    const input: TemplateGenerationInput = req.body.input;
+    console.log(input);
+    const imagename: string = generateRandomName({length : 12, endsWith : ".png"});
+    if (!input || !imagename) {
+      res.status(400).send('Missing input or imagename');
+      return;
+    }
+
+    await generateAndStoreImageFromTemplateStrict(input, imagename);
     res.json({ imagename });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Failed to generate image"});
@@ -94,15 +113,20 @@ app.post('/upload-template', upload.single('template'), async (req, res) => {
       return;
     }
 
-    const templateStorageDir = join(__dirname, '../../storage/local-blob-storage/templates');
+    const templateStorageDir = join(__dirname, '../../local-blob-storage/templates');
     const fs = require('fs').promises;
 
+    const newTemplateName:string = generateRandomName({length : 12, endsWith : ".html"})
+
     const oldPath = req.file.path;
-    const newPath = join(templateStorageDir, req.file.originalname);
+    const newPath = join(templateStorageDir, newTemplateName);
 
     await fs.rename(oldPath, newPath);
 
-    res.json({ message: 'Template uploaded', filename: req.file.originalname });
+    const htmlContent = readFileSync(newPath, "utf8");
+    const fields = getTemplateFields(htmlContent);
+
+    res.json({ message: 'Template uploaded', filename: newTemplateName, fields });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Failed to upload template"});
   }
@@ -112,3 +136,4 @@ app.listen(3001, async () => {
   await ensureDirs();
   console.log('Server is running on http://localhost:3001');
 });
+
