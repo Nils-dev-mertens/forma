@@ -1,77 +1,102 @@
 import express from "express";
 import type { RequestHandler } from "express";
 import multer from "multer";
-import { getData } from "@repo/db";
+import { rename, rm } from "fs/promises";
 import { GenerateKey, CheckKey, generateRandomName } from "@repo/auth";
-import { ensureDirs, getGeneratedImage } from "@repo/storage";
-import { generateAndStoreImageFromTemplate, generateAndStoreImageFromTemplateStrict, getTemplateFields, renderTemplateStrict, type TemplateGenerationInput } from "@repo/generation";
-import { GENERATED_IMAGES_DIR } from "@repo/storage";
-import { join } from "path";
+import {
+    ensureDirs,
+    getGeneratedImage,
+} from "@repo/storage";
+import {
+    generateAndStoreImageFromTemplate,
+    generateAndStoreImageFromTemplateStrict,
+    getTemplateFields,
+    type TemplateGenerationInput,
+} from "@repo/generation";
+import path, { join } from "path";
 import { readFileSync } from "fs";
 import { logger } from "@repo/logger";
-import swaggerUi from 'swagger-ui-express';
-import swaggerJSDoc from 'swagger-jsdoc';
-import dotenv from 'dotenv';
+import swaggerUi from "swagger-ui-express";
+import swaggerJSDoc from "swagger-jsdoc";
+import dotenv from "dotenv";
 
 dotenv.config();
 
+const port = process.env.PORT != undefined ? process.env.ORIGIN : "3001";
+const origin =
+    process.env.ORIGIN != undefined
+        ? process.env.ORIGIN
+        : `http://localhost:${port}`;
+
 const swaggerDefinition = {
   openapi: '3.0.0',
-  info: {
+    info: {
     title: 'My API',
     version: '1.0.0',
     description: 'API documentation for development',
-  },
-  servers: [
-    {
+    },
+    servers: [
+        {
       url: 'http://localhost:3001',
       description: 'Development server',
-    },
-  ],
+        },
+    ],
 };
 
 const options = {
-  swaggerDefinition,
-  apis: ['./index.ts'], // Path to the API docs (could add explicit route files if modularized)
+    swaggerDefinition,
+    apis: ["./index.ts"], // Path to the API docs (could add explicit route files if modularized)
 };
 
 const swaggerSpec = swaggerJSDoc(options);
 
 const app = express();
 
-if (process.env.NODE_ENV === 'development') {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+if (process.env.NODE_ENV === "development") {
+    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
 
 export const AuthHandler: RequestHandler = async (req, res, next) => {
-  const key = req.headers['x-api-key'] || req.headers.authorization;
+    const key = req.headers["x-api-key"] || req.headers.authorization;
 
-  if (!key) {
-    return res.status(401).json({ error: "Geen API-sleutel gevonden in de headers." });
-  }
-
-  const keyString = Array.isArray(key) ? key[0] : key;
-
-  if (typeof keyString !== 'string' || keyString.trim() === '') {
-    return res.status(401).json({ error: "Ongeldige API-sleutel (geen string of leeg)." });
-  }
-
-  try {
-    const isValid = await CheckKey(keyString);
-    if (!isValid) {
-      return res.status(403).json({ error: "Ongeldige API-sleutel." });
+    if (!key) {
+        return res
+            .status(401)
+            .json({ error: "Geen API-sleutel gevonden in de headers." });
     }
-  } catch (error) {
-    logger.error({ message : "Catch an error while checking if the apikey is valid or not" ,error : error});
-    return res.status(500).json({ error: "Interne serverfout." });
-  }
 
-  next();
+    const keyString = Array.isArray(key) ? key[0] : key;
+
+    if (typeof keyString !== "string" || keyString.trim() === "") {
+        return res
+            .status(401)
+            .json({ error: "Ongeldige API-sleutel (geen string of leeg)." });
+    }
+
+    try {
+        const isValid = await CheckKey(keyString);
+        if (!isValid) {
+            return res.status(403).json({ error: "Ongeldige API-sleutel." });
+        }
+    } catch (error) {
+        logger.error({
+            message:
+                "Catch an error while checking if the apikey is valid or not",
+            error: error,
+        });
+        return res.status(500).json({ error: "Interne serverfout." });
+    }
+
+    next();
 };
 
 app.use(express.json());
 
-const upload = multer({ dest: GENERATED_IMAGES_DIR });
+const tempDir = path.resolve(process.cwd(), "../../local-blob-storage/temp");
+
+const upload = multer({
+    dest: tempDir,
+});
 
 /**
  * @openapi
@@ -90,12 +115,12 @@ const upload = multer({ dest: GENERATED_IMAGES_DIR });
  *                   type: string
  */
 app.get("/key/new", async (req, res) => {
-  const data = await GenerateKey();
-  res.json({ key: data });
+    const data = await GenerateKey();
+    res.json({ key: data });
 });
 
-if (process.env.NODE_ENV != 'development') {
-  app.use(AuthHandler);
+if (process.env.NODE_ENV != "development") {
+    app.use(AuthHandler);
 }
 
 /**
@@ -129,33 +154,63 @@ if (process.env.NODE_ENV != 'development') {
  *       404:
  *         description: Image not found
  */
-app.get('/photos/:imagename', async (req, res) => {
-  const imagename = req.params.imagename;
+app.get("/photos/:imagename", async (req, res) => {
+    const imagename = req.params.imagename;
 
-  try {
-    const imageBuffer = await getGeneratedImage(imagename);
-    if (!imageBuffer) {
-      res.status(404).send('Image not found');
-      return;
+    try {
+        const imageBuffer = await getGeneratedImage(imagename);
+        if (!imageBuffer) {
+            res.status(404).send("Image not found");
+            return;
+        }
+
+        const ext = imagename.split(".").pop()?.toLowerCase();
+        let contentType = "application/octet-stream";
+
+        if (ext === "jpg" || ext === "jpeg") {
+            contentType = "image/jpeg";
+        } else if (ext === "png") {
+            contentType = "image/png";
+        } else if (ext === "gif") {
+            contentType = "image/gif";
+        }
+
+        res.setHeader("Content-Type", contentType);
+        res.send(imageBuffer);
+    } catch (error) {
+        res.status(500).send("Failed to retrieve image");
     }
-
-    const ext = imagename.split('.').pop()?.toLowerCase();
-    let contentType = 'application/octet-stream';
-
-    if (ext === 'jpg' || ext === 'jpeg') {
-      contentType = 'image/jpeg';
-    } else if (ext === 'png') {
-      contentType = 'image/png';
-    } else if (ext === 'gif') {
-      contentType = 'image/gif';
-    }
-
-    res.setHeader('Content-Type', contentType);
-    res.send(imageBuffer);
-  } catch (error) {
-    res.status(500).send('Failed to retrieve image');
-  }
 });
+
+// app.get("/tempphotos/:imagename", async (req, res) => {
+//     const imagename = req.params.imagename;
+
+//     try {
+//         const imageBuffer = await readFile(join(tempDir, imagename));
+//         if (!imageBuffer) {
+//             res.status(404).send("Image not found");
+//             return;
+//         }
+
+//         const ext = imagename.split(".").pop()?.toLowerCase();
+//         let contentType = "application/octet-stream";
+
+//         if (ext === "jpg" || ext === "jpeg") {
+//             contentType = "image/jpeg";
+//         } else if (ext === "png") {
+//             contentType = "image/png";
+//         } else if (ext === "gif") {
+//             contentType = "image/gif";
+//         }
+
+//         res.setHeader("Content-Type", contentType);
+//         res.send(imageBuffer);
+//     } catch (error) {
+//         res.status(500).send("Failed to retrieve image");
+//     }
+// });
+
+app.use("/tempphotos", express.static(tempDir));
 
 /**
  * @openapi
@@ -187,21 +242,69 @@ app.get('/photos/:imagename', async (req, res) => {
  *       500:
  *         description: Failed to generate image
  */
-app.post('/generate-image', async (req, res) => {
-  try {
-    const input: TemplateGenerationInput = req.body.input;
-    console.log(input);
-    const imagename: string = generateRandomName({length : 12, endsWith : ".png"});
-    if (!input || !imagename) {
-      res.status(400).send('Missing input or imagename');
-      return;
-    }
+app.post("/generate-image", upload.array("images"), async (req, res) => {
+    try {
+        const input: TemplateGenerationInput =
+            typeof req.body.input === "string"
+                ? JSON.parse(req.body.input)
+                : req.body.input;
+        logger.info(input);
 
-    await generateAndStoreImageFromTemplate(input, imagename);
-    res.json({ imagename });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Failed to generate image"});
-  }
+        if (!input) {
+            res.status(400).send("Missing input or imagename");
+            return;
+        }
+
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: "Geen images geüpload." });
+        }
+
+        const tempFileNames: string[] = [];
+
+        for (const file of req.files as Express.Multer.File[]) {
+            const ext = file.originalname.match(/\.[0-9a-z]+$/i)?.[0] ?? ".png";
+
+            const tempFileName = generateRandomName({
+                length: 12,
+                endsWith: ext,
+            });
+
+            const tempFilePath = join(tempDir, tempFileName);
+
+            // move file
+            await rename(file.path, tempFilePath);
+
+            tempFileNames.push(tempFileName);
+
+            if (input.data?.records) {
+                for (const key in input.data.records) {
+                    if (input.data.records[key] === file.originalname) {
+                        input.data.records[key] =
+                            `${origin}/tempphotos/${tempFileName}`;
+                    }
+                }
+            }
+        }
+
+        const generatedImageName: string = generateRandomName({
+            length: 12,
+            endsWith: ".png",
+        });
+
+        await generateAndStoreImageFromTemplate(input, generatedImageName);
+
+        for (const filename of tempFileNames) {
+            await rm(join(tempDir, filename));
+        }
+        res.json({ imagename: generatedImageName });
+    } catch (error) {
+        res.status(500).json({
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to generate image",
+        });
+    }
 });
 
 /**
@@ -234,21 +337,29 @@ app.post('/generate-image', async (req, res) => {
  *       500:
  *         description: Failed to generate image
  */
-app.post('/generate-image-strict', async (req, res) => {
-  try {
-    const input: TemplateGenerationInput = req.body.input;
-    console.log(input);
-    const imagename: string = generateRandomName({length : 12, endsWith : ".png"});
-    if (!input || !imagename) {
-      res.status(400).send('Missing input or imagename');
-      return;
-    }
+app.post("/generate-image-strict", async (req, res) => {
+    try {
+        const input: TemplateGenerationInput = req.body.input;
+        console.log(input);
+        const imagename: string = generateRandomName({
+            length: 12,
+            endsWith: ".png",
+        });
+        if (!input || !imagename) {
+            res.status(400).send("Missing input or imagename");
+            return;
+        }
 
-    await generateAndStoreImageFromTemplateStrict(input, imagename);
-    res.json({ imagename });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Failed to generate image"});
-  }
+        await generateAndStoreImageFromTemplateStrict(input, imagename);
+        res.json({ imagename });
+    } catch (error) {
+        res.status(500).json({
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to generate image",
+        });
+    }
 });
 
 /**
@@ -288,34 +399,47 @@ app.post('/generate-image-strict', async (req, res) => {
  *       500:
  *         description: Failed to upload template
  */
-app.post('/upload-template', upload.single('template'), async (req, res) => {
-  try {
-    if (!req.file) {
-      res.status(400).send('No file uploaded');
-      return;
+app.post("/upload-template", upload.single("template"), async (req, res) => {
+    try {
+        if (!req.file) {
+            res.status(400).send("No file uploaded");
+            return;
+        }
+
+        const templateStorageDir = join(
+            __dirname,
+            "../../local-blob-storage/templates",
+        );
+
+        const newTemplateName: string = generateRandomName({
+            length: 12,
+            endsWith: ".html",
+        });
+
+        const oldPath = req.file.path;
+        const newPath = join(templateStorageDir, newTemplateName);
+
+        await rename(oldPath, newPath);
+
+        const htmlContent = readFileSync(newPath, "utf8");
+        const fields = getTemplateFields(htmlContent);
+
+        res.json({
+            message: "Template uploaded",
+            filename: newTemplateName,
+            fields,
+        });
+    } catch (error) {
+        res.status(500).json({
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to upload template",
+        });
     }
-
-    const templateStorageDir = join(__dirname, '../../local-blob-storage/templates');
-    const fs = require('fs').promises;
-
-    const newTemplateName:string = generateRandomName({length : 12, endsWith : ".html"})
-
-    const oldPath = req.file.path;
-    const newPath = join(templateStorageDir, newTemplateName);
-
-    await fs.rename(oldPath, newPath);
-
-    const htmlContent = readFileSync(newPath, "utf8");
-    const fields = getTemplateFields(htmlContent);
-
-    res.json({ message: 'Template uploaded', filename: newTemplateName, fields });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Failed to upload template"});
-  }
 });
 
 app.listen(3001, async () => {
-  await ensureDirs();
-  console.log('Server is running on http://localhost:3001');
+    await ensureDirs();
+    console.log(`Server is running on ${origin}`);
 });
-
