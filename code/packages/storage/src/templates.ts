@@ -2,6 +2,7 @@ import { existsSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { TEMPLATES_DIR } from "./config.ts";
+import { logger } from "@repo/logger";
 
 // Ensure TEMPLATES_DIR exists
 async function ensureTemplatesDir() {
@@ -15,7 +16,7 @@ export async function saveTemplate(filename: string, content: string): Promise<v
     await ensureTemplatesDir();
     const filePath = join(TEMPLATES_DIR, filename);
     await writeFile(filePath, content, "utf-8");
-    console.log(`Saved template file: ${filename}`);
+    logger.info(`Saved template file: ${filename}`);
 }
 
 // Get template content, or null if not found

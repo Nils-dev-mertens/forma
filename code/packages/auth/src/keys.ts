@@ -1,8 +1,7 @@
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
 import { getKeyHash, storeKeyHash } from "@repo/db";
-
-const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS ?? 12);
+import { SALT_ROUNDS } from "./config.ts";
 
 export type ApiKey = `key-${string}`;
 
