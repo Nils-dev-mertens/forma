@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { GENERATED_IMAGES_DIR } from "./config.ts";
 
@@ -15,4 +15,12 @@ export async function getGeneratedImage(imagename: string): Promise<Buffer | nul
     const filePath = join(GENERATED_IMAGES_DIR, imagename);
     if (!existsSync(filePath)) return null;
     return await readFile(filePath);
+}
+
+// Delete a generated image by name. Returns true if a file was removed.
+export async function deleteGeneratedImage(imagename: string): Promise<boolean> {
+    const filePath = join(GENERATED_IMAGES_DIR, imagename);
+    if (!existsSync(filePath)) return false;
+    await rm(filePath);
+    return true;
 }

@@ -6,13 +6,34 @@ import imageGenerationRoute from "./generation/image"
 import keyRoute from "./key"
 import photoRoute from "./photos"
 import userRoute from "./users"
+import setRoute from "./set"
 
 const router:Router = Router();
 
 export const AuthHandler: RequestHandler = async (req, res, next) => {
-    const key = req.headers["x-api-key"] || req.headers.authorization;
+    const rawKey = req.headers["x-api-key"] || req.headers.authorization;
 
-    if (!key) {
+    // In development, allow unauthenticated requests but still validate keys
+    // when they are provided. This lets Swagger with an API key work while
+    // keeping the convenience of keyless local testing.
+    if (!rawKey) {
+        if (process.env.NODE_ENV === "development") {
+            res.locals.user = {
+                id: 1,
+                keyId: null,
+                keyPrefix: null,
+                authenticated: false,
+                authenticationMethod: "development_default"
+            };
+            logger.warn({
+                message: "DEVELOPMENT MODE: API route accessed without authentication",
+                path: req.path,
+                method: req.method,
+                ip: req.ip
+            });
+            return next();
+        }
+
         logger.warn({
             message: "API request without authentication header",
             path: req.path,
@@ -26,13 +47,13 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
             });
     }
 
-    const keyString = Array.isArray(key) ? key[0] : key;
+    const keyInput = Array.isArray(rawKey) ? rawKey[0] : rawKey;
 
-    if (typeof keyString !== "string" || keyString.trim() === "") {
+    if (typeof keyInput !== "string" || keyInput.trim() === "") {
         logger.warn({
             message: "Invalid API key format received",
-            keyType: typeof key,
-            keyValue: key
+            keyType: typeof keyInput,
+            keyValue: rawKey
         });
         return res
             .status(401)
@@ -41,6 +62,9 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
                 details: "De API sleutel moet een niet-lege string zijn."
             });
     }
+
+    // Support "Authorization: Bearer <key>" as well as "x-api-key: <key>".
+    const keyString = keyInput.replace(/^Bearer\\s+/i, "");
 
     try {
         const isValid = await CheckKey(keyString);
@@ -87,6 +111,10 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
                 path: req.path,
                 method: req.method
             });
+            return res.status(500).json({
+                error: "Interne serverfout.",
+                details: "API sleutel is geverifieerd maar gebruikersgegevens ontbreken."
+            });
         }
 
     } catch (error) {
@@ -106,25 +134,16 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
 };
 
 if (process.env.NODE_ENV != "development") {
-    logger.info({message : "Api route is using key protection"})
-    router.use(AuthHandler);
-} else {
-    // In development mode, log when routes are accessed without authentication
-    router.use((req, res, next) => {
-        logger.warn({
-            message: "DEVELOPMENT MODE: API route accessed without authentication",
-            path: req.path,
-            method: req.method,
-            ip: req.ip
-        });
-        next();
-    });
+    logger.info({ message: "Api route is using key protection" });
 }
+
+router.use(AuthHandler);
 
 router.use("/template", templateroute)
 router.use("/generation/image", imageGenerationRoute)
 router.use("/key", keyRoute)
 router.use("/photos", photoRoute)
 router.use("/users", userRoute)
+router.use("/set", setRoute)
 
 export default router;

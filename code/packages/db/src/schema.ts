@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 // Users table
@@ -31,19 +31,6 @@ export const appData = sqliteTable('app_data', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
-// Relations
-export const usersRelations = relations(users, ({ many }) => ({
-  apiKeys: many(apiKeys),
-  appData: many(appData),
-}));
-
-export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
-  user: one(users, {
-    fields: [apiKeys.userId],
-    references: [users.id],
-  }),
-}));
-
 // Templates table
 export const templates = sqliteTable('templates', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -54,15 +41,86 @@ export const templates = sqliteTable('templates', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
+// Sets table - a configurable collection of dynamic entries.
+// fields:    JSON array of { fieldname, type, required? } field declarations.
+// templates: JSON array of template names attached to the set (>=1 enforced at API layer).
+// triggers:  JSON object { add: string[], modify: string[], remove: string[] } of template names.
+export const sets = sqliteTable(
+  'sets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id').notNull().references(() => users.id),
+    name: text('name').notNull(),
+    description: text('description'),
+    fields: text('fields').notNull(),
+    templates: text('templates').notNull(),
+    triggers: text('triggers').notNull(),
+    dimensions: text('dimensions').notNull().default('{}'),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  },
+  (table) => ({
+    userIdNameIdx: index('sets_user_id_name_idx').on(table.userId, table.name),
+  }),
+);
+
+// Entries table - one row per record; flexible JSON data column.
+export const entries = sqliteTable(
+  'entries',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    setId: integer('set_id').notNull().references(() => sets.id),
+    data: text('data').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  },
+  (table) => ({
+    setIdIdx: index('entries_set_id_idx').on(table.setId),
+  }),
+);
+
 // Images table
 export const images = sqliteTable('images', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').notNull().references(() => users.id),
   templateId: integer('template_id').references(() => templates.id),
+  entryId: integer('entry_id'), // nullable: legacy images are not linked to any entry
   name: text('name').notNull().unique(),
   generationData: text('generation_data'), // JSON with generation parameters
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  apiKeys: many(apiKeys),
+  appData: many(appData),
+  templates: many(templates),
+  images: many(images),
+  sets: many(sets),
+}));
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  user: one(users, {
+    fields: [apiKeys.userId],
+    references: [users.id],
+  }),
+}));
+
+export const setsRelations = relations(sets, ({ one, many }) => ({
+  user: one(users, {
+    fields: [sets.userId],
+    references: [users.id],
+  }),
+  entries: many(entries),
+}));
+
+export const entriesRelations = relations(entries, ({ one, many }) => ({
+  set: one(sets, {
+    fields: [entries.setId],
+    references: [sets.id],
+  }),
+  images: many(images),
+}));
 
 export const appDataRelations = relations(appData, ({ one }) => ({
   user: one(users, {
@@ -88,6 +146,10 @@ export const imagesRelations = relations(images, ({ one }) => ({
     fields: [images.templateId],
     references: [templates.id],
   }),
+  entry: one(entries, {
+    fields: [images.entryId],
+    references: [entries.id],
+  }),
 }));
 
 // Types
@@ -101,3 +163,7 @@ export type Template = typeof templates.$inferSelect;
 export type NewTemplate = typeof templates.$inferInsert;
 export type Image = typeof images.$inferSelect;
 export type NewImage = typeof images.$inferInsert;
+export type Set = typeof sets.$inferSelect;
+export type NewSet = typeof sets.$inferInsert;
+export type Entry = typeof entries.$inferSelect;
+export type NewEntry = typeof entries.$inferInsert;
