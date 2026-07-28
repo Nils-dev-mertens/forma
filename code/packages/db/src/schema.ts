@@ -11,6 +11,21 @@ export const users = sqliteTable('users', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
+// Profiles table - one identity profile per user.
+export const profiles = sqliteTable('profiles', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
+  displayName: text('display_name'),
+  title: text('title'),
+  company: text('company'),
+  brandColors: text('brand_colors').notNull(),
+  logo: text('logo'),
+  socialLinks: text('social_links').notNull(),
+  customData: text('custom_data').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
 // API Keys table
 export const apiKeys = sqliteTable('api_keys', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -44,7 +59,7 @@ export const templates = sqliteTable('templates', {
 // Sets table - a configurable collection of dynamic entries.
 // fields:    JSON array of { fieldname, type, required? } field declarations.
 // templates: JSON array of template names attached to the set (>=1 enforced at API layer).
-// triggers:  JSON object { add: string[], modify: string[], remove: string[] } of template names.
+// triggers:  JSON object { add: TriggerAction[], modify: TriggerAction[] }.
 export const sets = sqliteTable(
   'sets',
   {
@@ -55,7 +70,6 @@ export const sets = sqliteTable(
     fields: text('fields').notNull(),
     templates: text('templates').notNull(),
     triggers: text('triggers').notNull(),
-    dimensions: text('dimensions').notNull().default('{}'),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
   },
@@ -91,12 +105,23 @@ export const images = sqliteTable('images', {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   apiKeys: many(apiKeys),
   appData: many(appData),
   templates: many(templates),
   images: many(images),
   sets: many(sets),
+  profile: one(profiles, {
+    fields: [users.id],
+    references: [profiles.userId],
+  }),
+}));
+
+export const profilesRelations = relations(profiles, ({ one }) => ({
+  user: one(users, {
+    fields: [profiles.userId],
+    references: [users.id],
+  }),
 }));
 
 export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
@@ -155,6 +180,8 @@ export const imagesRelations = relations(images, ({ one }) => ({
 // Types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type Profile = typeof profiles.$inferSelect;
+export type NewProfile = typeof profiles.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
 export type AppData = typeof appData.$inferSelect;

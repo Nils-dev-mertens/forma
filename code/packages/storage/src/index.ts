@@ -1,5 +1,7 @@
 export { getProfilePhoto, saveProfilePhoto } from "./profile.ts"
+export { saveProfileLogo, getProfileLogo, deleteProfileLogo, getProfileLogoPath, isProfileLogoPath } from "./profileLogos.ts"
 export { saveGeneratedImage, getGeneratedImage, deleteGeneratedImage } from "./generatedImages.ts"
-export { ensureDirs, GENERATED_IMAGES_DIR } from "./config.ts"
+export { ensureDirs, GENERATED_IMAGES_DIR, SET_IMAGES_DIR, PROFILE_LOGOS_DIR } from "./config.ts"
+export { saveSetImage, getSetImage, deleteSetImage, getSetImagePath, deleteSetImageDirectory, isSetImagePath } from "./setImages.ts"
 export { saveTemplate, getTemplate } from "./templates.ts"
 export { getTempFile, deleteTempFile } from "./temp.ts"

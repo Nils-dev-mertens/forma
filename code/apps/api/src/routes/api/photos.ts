@@ -10,6 +10,7 @@ const router:Router = Router();
  *   get:
  *     summary: Get a generated image
  *     description: Retrieve a generated image by its filename. Requires authentication and checks image ownership.
+ *     tags: [Generated Images]
  *     security:
  *       - apiKey: []
  *     parameters:

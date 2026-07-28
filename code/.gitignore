@@ -36,6 +36,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Local AI progress notes
+docs/ai/
+
 # Misc
 .DS_Store
 *.pem

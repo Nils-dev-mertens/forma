@@ -13,7 +13,7 @@ export type SetFieldType = (typeof SUPPORTED_FIELD_TYPES)[number];
 /** A single declared field on a set. */
 export interface SetField {
   fieldname: string;
-  /** "string" | "number" | "boolean" */
+  /** "string" | "number" | "boolean" | "image" */
   type: SetFieldType | string;
   /** When true, entries must include this field. */
   required?: boolean;
@@ -22,38 +22,44 @@ export interface SetField {
 /** Set -> templates: which template names are attached to it. */
 export type SetTemplateNames = string[];
 
+/** A single render action inside a trigger list. */
+export interface TriggerAction {
+  template: string;
+  widthPx: number;
+  heightPx: number;
+}
+
 /**
  * Trigger config.
- * For each event the array lists the template names that participate in the
- * action. add: render each template, link output to the entry.
+ * For each event the array lists the templates to render, together with the
+ * desired output dimensions. add: render each template, link output to entry.
  * modify: delete previous outputs from these templates and re-render them.
- * remove: delete outputs that came from these templates.
+ * On entry remove, all linked generated images are deleted automatically.
  */
 export interface SetTriggers {
-  add: string[];
-  modify: string[];
-  remove: string[];
+  add: TriggerAction[];
+  modify: TriggerAction[];
 }
 
-/** Dimensions for a single template output. */
-export interface SetDimension {
-  width: number;
-  height: number;
-}
-
-/** Per-template output dimensions keyed by template name. */
-export type SetDimensions = Record<string, SetDimension>;
+/** Default render dimensions. */
+export const DEFAULT_RENDER_DIMENSIONS = { widthPx: 1200, heightPx: 800 } as const;
 
 /** Helper that produces an empty/default trigger config. */
 export function emptyTriggers(): SetTriggers {
-  return { add: [], modify: [], remove: [] };
+  return { add: [], modify: [] };
 }
 
 /**
- * Default triggers: render every attached template on add, modify and remove.
+ * Default triggers: render every attached template on add and modify,
+ * using the default dimensions.
  */
 export function defaultTriggersFor(templates: string[]): SetTriggers {
-  return { add: [...templates], modify: [...templates], remove: [...templates] };
+  const actions = templates.map((template) => ({
+    template,
+    widthPx: DEFAULT_RENDER_DIMENSIONS.widthPx,
+    heightPx: DEFAULT_RENDER_DIMENSIONS.heightPx,
+  }));
+  return { add: actions, modify: actions };
 }
 
 interface CreateSetInput {
@@ -63,7 +69,6 @@ interface CreateSetInput {
   fields: SetField[];
   templates: SetTemplateNames;
   triggers?: SetTriggers;
-  dimensions?: SetDimensions;
 }
 
 interface UpdateSetInput {
@@ -71,7 +76,6 @@ interface UpdateSetInput {
   fields?: SetField[];
   templates?: SetTemplateNames;
   triggers?: SetTriggers;
-  dimensions?: SetDimensions;
 }
 
 function serialize(input: CreateSetInput | UpdateSetInput) {
@@ -82,10 +86,6 @@ function serialize(input: CreateSetInput | UpdateSetInput) {
     triggers:
       "triggers" in input && input.triggers
         ? JSON.stringify(input.triggers)
-        : undefined,
-    dimensions:
-      "dimensions" in input && input.dimensions
-        ? JSON.stringify(input.dimensions)
         : undefined,
   };
 }
@@ -116,7 +116,6 @@ export async function createSet(input: CreateSetInput): Promise<Set | null> {
     fields: partial.fields,
     templates: partial.templates,
     triggers,
-    dimensions: partial.dimensions ?? JSON.stringify({}),
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -187,76 +186,49 @@ export function decodeSetTemplates(set: Set): SetTemplateNames {
   }
 }
 
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function parseTriggerAction(item: unknown): TriggerAction | null {
+  if (typeof item === "string") {
+    return {
+      template: item,
+      widthPx: DEFAULT_RENDER_DIMENSIONS.widthPx,
+      heightPx: DEFAULT_RENDER_DIMENSIONS.heightPx,
+    };
+  }
+  if (!item || typeof item !== "object") return null;
+  const obj = item as Record<string, unknown>;
+  if (typeof obj.template !== "string") return null;
+  return {
+    template: obj.template,
+    widthPx: isPositiveInteger(obj.widthPx)
+      ? obj.widthPx
+      : DEFAULT_RENDER_DIMENSIONS.widthPx,
+    heightPx: isPositiveInteger(obj.heightPx)
+      ? obj.heightPx
+      : DEFAULT_RENDER_DIMENSIONS.heightPx,
+  };
+}
+
+function parseTriggerActions(list: unknown): TriggerAction[] {
+  if (!Array.isArray(list)) return [];
+  return list.map(parseTriggerAction).filter((a): a is TriggerAction => a !== null);
+}
+
 export function decodeSetTriggers(set: Set): SetTriggers {
   const empty = emptyTriggers();
   try {
     const parsed = JSON.parse(set.triggers);
+    if (!parsed || typeof parsed !== "object") return empty;
     return {
-      add: Array.isArray(parsed.add) ? parsed.add : empty.add,
-      modify: Array.isArray(parsed.modify) ? parsed.modify : empty.modify,
-      remove: Array.isArray(parsed.remove) ? parsed.remove : empty.remove,
+      add: parseTriggerActions(parsed.add),
+      modify: parseTriggerActions(parsed.modify),
     };
   } catch {
     return empty;
   }
-}
-
-export function decodeSetDimensions(set: Set): SetDimensions {
-  try {
-    const parsed = JSON.parse(set.dimensions);
-    if (!parsed || typeof parsed !== "object") return {};
-    const out: SetDimensions = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (
-        value &&
-        typeof value === "object" &&
-        typeof (value as SetDimension).width === "number" &&
-        typeof (value as SetDimension).height === "number"
-      ) {
-        out[key] = {
-          width: (value as SetDimension).width,
-          height: (value as SetDimension).height,
-        };
-      }
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Validate per-template dimensions. Returns the first error message or null.
- * Validator rules:
- *  - must be a plain object
- *  - every key must be in `templates`
- *  - every value must be an object with positive integer width/height.
- */
-export function validateDimensions(
-  dimensions: unknown,
-  templates: string[],
-): string | null {
-  if (dimensions === undefined || dimensions === null) return null;
-  if (typeof dimensions !== "object" || Array.isArray(dimensions)) {
-    return "dimensions must be an object";
-  }
-  const dimRecord = dimensions as Record<string, unknown>;
-  for (const [template, value] of Object.entries(dimRecord)) {
-    if (!templates.includes(template)) {
-      return `dimensions key "${template}" is not a template attached to the set`;
-    }
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return `dimensions for "${template}" must be an object with width and height`;
-    }
-    const { width, height } = value as Record<string, unknown>;
-    if (!Number.isInteger(width) || (width as number) <= 0) {
-      return `dimensions width for "${template}" must be a positive integer`;
-    }
-    if (!Number.isInteger(height) || (height as number) <= 0) {
-      return `dimensions height for "${template}" must be a positive integer`;
-    }
-  }
-  return null;
 }
 
 /**
@@ -290,6 +262,65 @@ export function validateFields(fields: unknown): string | null {
         return `unsupported field type: ${f.type}`;
       }
     }
+  }
+  return null;
+}
+
+/**
+ * Validate a list of trigger actions against the attached templates.
+ * Returns the first error message or null.
+ */
+function validateTriggerActions(
+  actions: unknown,
+  attachedTemplates: string[],
+  event: string,
+): string | null {
+  if (!Array.isArray(actions)) return `${event} trigger actions must be an array`;
+  const seen = new Set<string>();
+  for (const item of actions) {
+    if (!item || typeof item !== "object") {
+      return `${event}: every trigger action must be an object`;
+    }
+    const template = (item as any).template;
+    if (typeof template !== "string") {
+      return `${event}: every trigger action must have a template string`;
+    }
+    if (!attachedTemplates.includes(template)) {
+      return `${event}: trigger references template not attached to set: ${template}`;
+    }
+    if (seen.has(template)) {
+      return `${event}: duplicate trigger for template ${template}`;
+    }
+    seen.add(template);
+    const width = (item as any).widthPx;
+    if (!isPositiveInteger(width)) {
+      return `${event}: widthPx for template ${template} must be a positive integer`;
+    }
+    const height = (item as any).heightPx;
+    if (!isPositiveInteger(height)) {
+      return `${event}: heightPx for template ${template} must be a positive integer`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Validate the trigger config. Returns the first error message or null.
+ * Omitted keys are allowed and treated as empty arrays by callers.
+ */
+export function validateTriggers(
+  triggers: unknown,
+  attachedTemplates: string[],
+): string | null {
+  if (!triggers || typeof triggers !== "object") {
+    return "triggers must be an object";
+  }
+  const obj = triggers as Record<string, unknown>;
+  for (const event of ["add", "modify"]) {
+    if (!(event in obj)) continue;
+    const list = obj[event];
+    const error = validateTriggerActions(list, attachedTemplates, event);
+    if (error) return error;
   }
   return null;
 }

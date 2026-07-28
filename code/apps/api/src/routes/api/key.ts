@@ -19,6 +19,7 @@ const router: Router = Router()
  *   post:
  *     summary: Generate a new API key
  *     description: Generate a new API key for authentication. In development mode, this creates keys for a default user. In production, proper authentication is required.
+ *     tags: [API Keys]
  *     security:
  *       - apiKey: []
  *     requestBody:
@@ -125,6 +126,7 @@ router.post("/generate", async (req, res) => {
  *   post:
  *     summary: Validate an API key
  *     description: Check if an API key is valid and get information about it.
+ *     tags: [API Keys]
  *     requestBody:
  *       required: true
  *       content:
@@ -221,6 +223,7 @@ router.post("/validate", async (req, res) => {
  *   get:
  *     summary: List all API keys for a user
  *     description: Retrieve all API keys for the authenticated user. In development mode, returns keys for a default user. In production, proper authentication is required.
+ *     tags: [API Keys]
  *     security:
  *       - apiKey: []
  *     responses:
@@ -315,6 +318,7 @@ router.get("/list", async (req, res) => {
  *   delete:
  *     summary: Revoke an API key
  *     description: Revoke an API key by its ID. The key will no longer be valid for authentication.
+ *     tags: [API Keys]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -411,6 +415,7 @@ router.delete("/revoke/:keyId", async (req, res) => {
  *   patch:
  *     summary: Update API key expiration
  *     description: Update the expiration date of an API key. This allows setting or changing when the key will expire.
+ *     tags: [API Keys]
  *     security:
  *       - apiKey: []
  *     parameters:

@@ -118,7 +118,6 @@ export async function initializeDatabase() {
         fields TEXT NOT NULL,
         templates TEXT NOT NULL,
         triggers TEXT NOT NULL,
-        dimensions TEXT NOT NULL DEFAULT '{}',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id),
@@ -126,22 +125,59 @@ export async function initializeDatabase() {
       );
     `);
 
-    // Migrate: add dimensions column to existing sets table
+    // Migrate: drop the obsolete dimensions column from existing sets table
     try {
       const existingSetColumns = sqlite
         .query("PRAGMA table_info(sets)")
         .all() as Array<{ name: string }>;
       const hasDimensions = existingSetColumns.some((c) => c.name === "dimensions");
-      if (!hasDimensions) {
-        db.run(`ALTER TABLE sets ADD COLUMN dimensions TEXT NOT NULL DEFAULT '{}';`);
+      if (hasDimensions) {
+        db.run(`ALTER TABLE sets DROP COLUMN dimensions;`);
+        console.log("Dropped obsolete sets.dimensions column");
       }
     } catch (error) {
-      console.warn("Could not migrate sets.dimensions:", error);
+      console.warn("Could not drop sets.dimensions:", error);
     }
 
     db.run(
       `CREATE INDEX IF NOT EXISTS sets_user_id_name_idx ON sets (user_id, name);`,
     );
+
+    // Create profiles table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE,
+        display_name TEXT,
+        title TEXT,
+        company TEXT,
+        brand_colors TEXT NOT NULL DEFAULT '{}',
+        logo TEXT,
+        social_links TEXT NOT NULL DEFAULT '{}',
+        custom_data TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Migrate: create a profile for every existing user that does not have one.
+    try {
+      const backfill = db.run(`
+        INSERT INTO profiles (user_id, display_name, title, company, brand_colors, logo, social_links, custom_data, created_at, updated_at)
+        SELECT u.id, NULL, NULL, NULL, '{}', NULL, '{}', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE p.id IS NULL;
+      `);
+      // @ts-ignore - changes property exists on the result
+      const inserted = (backfill as any).changes ?? 0;
+      if (inserted > 0) {
+        console.log(`Backfilled ${inserted} missing profile(s)`);
+      }
+    } catch (error) {
+      console.warn("Could not backfill missing profiles:", error);
+    }
 
     // Create entries table
     db.run(`

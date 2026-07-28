@@ -23,12 +23,10 @@ import {
   createTemplate,
   deleteTemplate,
   validateFields,
-  validateDimensions,
   emptyTriggers,
   decodeSetFields,
   decodeSetTemplates,
   decodeSetTriggers,
-  decodeSetDimensions,
   SUPPORTED_FIELD_TYPES,
   createEntry,
   getEntriesBySetId,
@@ -114,44 +112,13 @@ describe("validateFields", () => {
 });
 
 describe("emptyTriggers", () => {
-  test("produces three empty arrays", () => {
+  test("produces two empty arrays", () => {
     const tr = emptyTriggers();
-    expect(tr).toEqual({ add: [], modify: [], remove: [] });
+    expect(tr).toEqual({ add: [], modify: [] });
   });
 });
 
-describe("validateDimensions", () => {
-  test("accepts undefined / null", () => {
-    expect(validateDimensions(undefined, [])).toBeNull();
-    expect(validateDimensions(null, [])).toBeNull();
-  });
-
-  test("accepts valid dimensions", () => {
-    expect(
-      validateDimensions({ "badge.html": { width: 400, height: 300 } }, ["badge.html"]),
-    ).toBeNull();
-  });
-
-  test("rejects dimensions for unknown templates", () => {
-    expect(validateDimensions({ "other.html": { width: 400, height: 300 } }, ["badge.html"])).toBe(
-      'dimensions key "other.html" is not a template attached to the set',
-    );
-  });
-
-  test("rejects non-positive or non-integer dimensions", () => {
-    expect(validateDimensions({ "a.html": { width: 0, height: 100 } }, ["a.html"])).toBe(
-      'dimensions width for "a.html" must be a positive integer',
-    );
-    expect(validateDimensions({ "a.html": { width: 100, height: -10 } }, ["a.html"])).toBe(
-      'dimensions height for "a.html" must be a positive integer',
-    );
-    expect(validateDimensions({ "a.html": { width: 1.5, height: 100 } }, ["a.html"])).toBe(
-      'dimensions width for "a.html" must be a positive integer',
-    );
-  });
-});
-
-describe("decodeSetFields / Templates / Triggers / Dimensions", () => {
+describe("decodeSetFields / Templates / Triggers", () => {
   test("decodeSetFields returns the array or empty", () => {
     const decoded = decodeSetFields({
       fields: JSON.stringify([{ fieldname: "x", type: "string" }]),
@@ -170,31 +137,31 @@ describe("decodeSetFields / Templates / Triggers / Dimensions", () => {
     expect(decodeSetTemplates({ templates: "garbage" } as any)).toEqual([]);
   });
 
-  test("decodeSetDimensions returns parsed dimensions or empty", () => {
-    expect(decodeSetDimensions({ dimensions: '{"a":{"width":1,"height":2}}' } as any)).toEqual({
-      a: { width: 1, height: 2 },
-    });
-    expect(decodeSetDimensions({ dimensions: "garbage" } as any)).toEqual({});
-    expect(decodeSetDimensions({ dimensions: "{}" } as any)).toEqual({});
-  });
-
-  test("decodeSetTriggers returns three arrays, defaulting to empty", () => {
+  test("decodeSetTriggers returns trigger actions, defaulting to empty", () => {
     const tr = decodeSetTriggers({
       triggers: JSON.stringify({
         add: ["t1"],
         modify: ["t1", "t2"],
-        remove: [],
       }),
     } as any);
-    expect(tr).toEqual({ add: ["t1"], modify: ["t1", "t2"], remove: [] });
+    expect(tr).toEqual({
+      add: [{ template: "t1", widthPx: 1200, heightPx: 800 }],
+      modify: [
+        { template: "t1", widthPx: 1200, heightPx: 800 },
+        { template: "t2", widthPx: 1200, heightPx: 800 },
+      ],
+    });
 
     const empty = decodeSetTriggers({ triggers: "broken" } as any);
-    expect(empty).toEqual({ add: [], modify: [], remove: [] });
+    expect(empty).toEqual({ add: [], modify: [] });
 
     const partial = decodeSetTriggers({
       triggers: JSON.stringify({ add: ["x"] }),
     } as any);
-    expect(partial).toEqual({ add: ["x"], modify: [], remove: [] });
+    expect(partial).toEqual({
+      add: [{ template: "x", widthPx: 1200, heightPx: 800 }],
+      modify: [],
+    });
   });
 });
 
@@ -311,9 +278,8 @@ describe("Sets CRUD", () => {
       ],
       templates: [sharedTemplateName, secondTemplateName],
       triggers: {
-        add: [sharedTemplateName, secondTemplateName],
-        modify: [sharedTemplateName],
-        remove: [sharedTemplateName],
+        add: [{ template: sharedTemplateName, widthPx: 1200, heightPx: 800 }],
+        modify: [{ template: sharedTemplateName, widthPx: 800, heightPx: 600 }],
       },
     });
 
@@ -331,9 +297,8 @@ describe("Sets CRUD", () => {
       secondTemplateName,
     ]);
     expect(decodeSetTriggers(created!)).toEqual({
-      add: [sharedTemplateName, secondTemplateName],
-      modify: [sharedTemplateName],
-      remove: [sharedTemplateName],
+      add: [{ template: sharedTemplateName, widthPx: 1200, heightPx: 800 }],
+      modify: [{ template: sharedTemplateName, widthPx: 800, heightPx: 600 }],
     });
 
     set1Id = created!.id;
@@ -367,12 +332,14 @@ describe("Sets CRUD", () => {
 
     // Now patch triggers only.
     const updated2 = await updateSet(set1Id, {
-      triggers: { add: [sharedTemplateName], modify: [], remove: [] },
+      triggers: {
+        add: [{ template: sharedTemplateName, widthPx: 1200, heightPx: 800 }],
+        modify: [],
+      },
     });
     expect(decodeSetTriggers(updated2!)).toEqual({
-      add: [sharedTemplateName],
+      add: [{ template: sharedTemplateName, widthPx: 1200, heightPx: 800 }],
       modify: [],
-      remove: [],
     });
   });
 
@@ -385,9 +352,8 @@ describe("Sets CRUD", () => {
     });
     expect(created).not.toBeNull();
     expect(decodeSetTriggers(created!)).toEqual({
-      add: [sharedTemplateName],
-      modify: [sharedTemplateName],
-      remove: [sharedTemplateName],
+      add: [{ template: sharedTemplateName, widthPx: 1200, heightPx: 800 }],
+      modify: [{ template: sharedTemplateName, widthPx: 1200, heightPx: 800 }],
     });
   });
 });

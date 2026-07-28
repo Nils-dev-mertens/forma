@@ -1,23 +1,25 @@
 import { generateAndStoreImageFromTemplateStrict, type TemplateGenerationInput } from "@repo/generation";
-import { deleteGeneratedImage } from "@repo/storage";
+import { deleteGeneratedImage, getSetImage, deleteSetImageDirectory, isSetImagePath, getProfileLogo, isProfileLogoPath } from "@repo/storage";
 import { generateRandomName } from "@repo/auth";
 import {
   createImage,
-  decodeSetDimensions,
   decodeSetTemplates,
   decodeSetTriggers,
   decodeEntryData,
-  defaultTriggersFor,
   deleteImage,
   entryDataToRecords,
+  getImagesByEntryId,
   getImagesByEntryIdAndTemplateNames,
+  getProfileByUserId,
   getTemplateByName,
   linkImageToEntry,
+  profileToRecords,
+  DEFAULT_RENDER_DIMENSIONS,
   type Entry,
   type Set,
   type Image,
   type SetTriggers,
-  type SetDimensions,
+  type TriggerAction,
 } from "@repo/db";
 import { logger } from "@repo/logger";
 
@@ -41,38 +43,82 @@ interface TriggerResult {
   missing: string[];
 }
 
-/** Image generation defaults - keep in sync with template authors' expectations. */
-const DEFAULT_RENDER_DIMENSIONS = { width: 1200, height: 800 } as const;
+const MIME_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+};
 
-function getRenderDimensions(
-  templatename: string,
-  dimensions: SetDimensions,
-): { width: number; height: number } {
-  return {
-    width: dimensions[templatename]?.width ?? DEFAULT_RENDER_DIMENSIONS.width,
-    height: dimensions[templatename]?.height ?? DEFAULT_RENDER_DIMENSIONS.height,
-  };
+function mimeTypeForImage(relativePath: string): string {
+  const ext = relativePath.split(".").pop()?.toLowerCase() || "png";
+  return MIME_TYPES[ext] ?? "image/png";
 }
 
 /**
  * Build a TemplateGenerationInput record from an entry's data.
  * Every declared field with a string-coercible value flows through as a record.
  *
+ * Any value that points to a stored set-image (e.g. "set-images/1/2/photo.png")
+ * is replaced with a base64 data URL so Puppeteer can render it without
+ * relying on a live static server.
+ *
  * NOTE: the existing TemplateGenerationInput interface in @repo/generation
- * misspells the width field as `withdpx`. We match that naming here so the
- * generated runtime accepts the object.
+ * misspells the width field as `withdpx`. We map the trigger action's widthPx
+ * to that field so the generated runtime accepts the object.
  */
-function buildGenerationInput(
-  templatename: string,
+async function buildGenerationInput(
+  action: TriggerAction,
   entry: Entry,
-  dimensions: SetDimensions,
-): TemplateGenerationInput {
-  const { width, height } = getRenderDimensions(templatename, dimensions);
+  userId: number,
+): Promise<TemplateGenerationInput> {
+  const records = entryDataToRecords(decodeEntryData(entry));
+
+  // Merge identity profile values into the template records.
+  const profile = await getProfileByUserId(userId);
+  if (profile) {
+    const profileRecords = profileToRecords(profile);
+    for (const [key, value] of Object.entries(profileRecords)) {
+      records[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(records)) {
+    if (typeof value === "string" && isSetImagePath(value)) {
+      try {
+        const buffer = await getSetImage(value);
+        if (buffer) {
+          const mime = mimeTypeForImage(value);
+          records[key] = `data:${mime};base64,${buffer.toString("base64")}`;
+        }
+      } catch (error) {
+        // Soft-fail: keep the original relative path if the file is missing
+        // or unreadable; the template will show a broken image instead of
+        // blocking the whole render.
+      }
+    }
+    if (typeof value === "string" && isProfileLogoPath(value)) {
+      try {
+        const buffer = await getProfileLogo(value);
+        if (buffer) {
+          const mime = mimeTypeForImage(value);
+          records[key] = `data:${mime};base64,${buffer.toString("base64")}`;
+        }
+      } catch (error) {
+        // Soft-fail: keep the original relative path if the file is missing
+        // or unreadable; the template will show a broken image instead of
+        // blocking the whole render.
+      }
+    }
+  }
+
   return {
-    templatename,
-    withdpx: width,
-    heightpx: height,
-    data: { records: entryDataToRecords(decodeEntryData(entry)) },
+    templatename: action.template,
+    withdpx: action.widthPx ?? DEFAULT_RENDER_DIMENSIONS.widthPx,
+    heightpx: action.heightPx ?? DEFAULT_RENDER_DIMENSIONS.heightPx,
+    data: { records },
   };
 }
 
@@ -83,15 +129,15 @@ function buildGenerationInput(
  */
 async function resolveTemplates(
   userId: number,
-  names: string[],
-): Promise<{ valid: string[]; missing: string[] }> {
-  if (names.length === 0) return { valid: [], missing: [] };
-  const valid: string[] = [];
+  actions: TriggerAction[],
+): Promise<{ valid: TriggerAction[]; missing: string[] }> {
+  if (actions.length === 0) return { valid: [], missing: [] };
+  const valid: TriggerAction[] = [];
   const missing: string[] = [];
-  for (const name of names) {
-    const t = await getTemplateByName(userId, name);
-    if (t) valid.push(name);
-    else missing.push(name);
+  for (const action of actions) {
+    const t = await getTemplateByName(userId, action.template);
+    if (t) valid.push(action);
+    else missing.push(action.template);
   }
   if (missing.length > 0) {
     logger.warn({
@@ -127,39 +173,38 @@ async function deleteImagesRowAndBlob(imgs: Image[]): Promise<void> {
  */
 async function renderTemplates(
   ctx: TriggerContext,
-  templates: string[],
+  actions: TriggerAction[],
 ): Promise<{ rendered: string[]; failed: TriggerFailure[] }> {
   const rendered: string[] = [];
   const failed: TriggerFailure[] = [];
-  const dimensions = decodeSetDimensions(ctx.set);
-  for (const templatename of templates) {
+  for (const action of actions) {
     const imagename = generateRandomName({ length: 12, endsWith: ".png" });
     try {
       await generateAndStoreImageFromTemplateStrict(
-        buildGenerationInput(templatename, ctx.entry, dimensions),
+        await buildGenerationInput(action, ctx.entry, ctx.userId),
         imagename,
       );
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       logger.error({
         message: "Trigger: failed to render template (skipping)",
-        templatename,
+        templatename: action.template,
         set: ctx.set.name,
         entry: ctx.entry.id,
         reason,
         stack: error instanceof Error ? error.stack : undefined,
       });
-      failed.push({ templatename, reason });
+      failed.push({ templatename: action.template, reason });
       continue;
     }
     try {
-      const templateRecord = await getTemplateByName(ctx.userId, templatename);
+      const templateRecord = await getTemplateByName(ctx.userId, action.template);
       const image = await createImage(
         ctx.userId,
         templateRecord?.id ?? null,
         imagename,
         {
-          template: templatename,
+          template: action.template,
           entryId: ctx.entry.id,
           setId: ctx.set.id,
         },
@@ -185,7 +230,7 @@ async function renderTemplates(
       const reason = error instanceof Error ? error.message : String(error);
       logger.error({
         message: "Trigger: failed to record image in DB (cleaned up blob)",
-        templatename,
+        templatename: action.template,
         set: ctx.set.name,
         entry: ctx.entry.id,
         reason,
@@ -207,44 +252,44 @@ export async function fireTriggers(
   event: SetTriggerEvent,
   ctx: TriggerContext,
 ): Promise<TriggerResult> {
+  if (event === "remove") {
+    // On entry deletion we drop every linked image automatically; there is
+    // no user-facing remove trigger anymore.
+    const linked = await getImagesByEntryId(ctx.entry.id);
+    const deleted = linked.map((img) => img.name);
+    await deleteImagesRowAndBlob(linked);
+    await deleteSetImageDirectory(ctx.set.id, ctx.entry.id);
+    return { rendered: [], deleted, failed: [], missing: [] };
+  }
+
   const triggers: SetTriggers = decodeSetTriggers(ctx.set);
-  const { valid: templates, missing } = await resolveTemplates(
+  const { valid: actions, missing } = await resolveTemplates(
     ctx.userId,
     triggers[event] ?? [],
   );
 
-  if (templates.length === 0) {
+  if (actions.length === 0) {
     return { rendered: [], deleted: [], failed: [], missing };
   }
 
   if (event === "add") {
-    const { rendered, failed } = await renderTemplates(ctx, templates);
+    const { rendered, failed } = await renderTemplates(ctx, actions);
     return { rendered, deleted: [], failed, missing };
   }
 
-  if (event === "modify") {
-    const stale = await getImagesByEntryIdAndTemplateNames(
-      ctx.userId,
-      ctx.entry.id,
-      templates,
-    );
-    const deleted = stale.map((img) => img.name);
-    await deleteImagesRowAndBlob(stale);
-    // Re-render exactly the templates that just had their images invalidated -
-    // NOT the "add" list. Each event controls its own template set.
-    const { rendered, failed } = await renderTemplates(ctx, templates);
-    return { rendered, deleted, failed, missing };
-  }
-
-  // remove
-  const linked = await getImagesByEntryIdAndTemplateNames(
+  // event === "modify"
+  const templateNames = actions.map((a) => a.template);
+  const stale = await getImagesByEntryIdAndTemplateNames(
     ctx.userId,
     ctx.entry.id,
-    templates,
+    templateNames,
   );
-  const deleted = linked.map((img) => img.name);
-  await deleteImagesRowAndBlob(linked);
-  return { rendered: [], deleted, failed: [], missing };
+  const deleted = stale.map((img) => img.name);
+  await deleteImagesRowAndBlob(stale);
+  // Re-render exactly the templates that just had their images invalidated -
+  // NOT the "add" list. Each event controls its own template set.
+  const { rendered, failed } = await renderTemplates(ctx, actions);
+  return { rendered, deleted, failed, missing };
 }
 
 // defaultTriggersFor is re-exported from @repo/db so the DB layer can
@@ -254,6 +299,9 @@ export async function fireTriggers(
 export function unusedTemplatesForSet(set: Set): string[] {
   const t = decodeSetTemplates(set);
   const tr = decodeSetTriggers(set);
-  const used = new Set<string>([...tr.add, ...tr.modify, ...tr.remove]);
+  const used = new Set<string>([
+    ...tr.add.map((a) => a.template),
+    ...tr.modify.map((a) => a.template),
+  ]);
   return t.filter((name) => !used.has(name));
 }

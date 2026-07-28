@@ -1,11 +1,11 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { logger } from "@repo/logger";
+import multer from "multer";
 import {
   checkRequiredFields,
   createEntry,
   createSet,
   decodeEntryData,
-  decodeSetDimensions,
   decodeSetFields,
   decodeSetTemplates,
   decodeSetTriggers,
@@ -13,7 +13,6 @@ import {
   deleteEntriesBySetId,
   deleteEntry,
   deleteSet,
-  emptyTriggers,
   getEntriesBySetId,
   getEntryInSet,
   getSetById,
@@ -23,15 +22,29 @@ import {
   getImagesByEntryId,
   updateEntry,
   updateSet,
-  validateDimensions,
   validateFields,
-  type SetDimensions,
+  validateTriggers,
+  DEFAULT_RENDER_DIMENSIONS,
   type SetField,
   type SetTriggers,
+  type TriggerAction,
 } from "@repo/db";
 import { fireTriggers, unusedTemplatesForSet } from "../../services/setTriggers.ts";
 import { getTemplateFields } from "@repo/generation";
-import { getTemplate } from "@repo/storage";
+import { getTemplate, saveSetImage, deleteSetImage } from "@repo/storage";
+
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported image type: ${file.mimetype}`));
+    }
+  },
+});
 
 const router: Router = Router();
 
@@ -62,10 +75,15 @@ async function validateTemplateFieldCoverage(
 
 // ---------------- helpers ----------------
 
-function requireUserId(res: any): number | null {
-  const userId = res.locals.user?.id;
-  if (!userId) return null;
-  return userId as number;
+function requireUserId(res: Response): number | undefined {
+  const user = (res.locals.user as { id?: number } | undefined);
+  return user?.id;
+}
+
+function parseIntParam(value: string | string[] | undefined): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : undefined;
 }
 
 async function assertOwnership(userId: number, setId: number) {
@@ -76,21 +94,39 @@ async function assertOwnership(userId: number, setId: number) {
   return { ok: true as const, set };
 }
 
-function normalizeTriggers(input: unknown): SetTriggers {
-  const empty = emptyTriggers();
-  if (!input || typeof input !== "object") return empty;
-  const obj = input as Record<string, unknown>;
-  return {
-    add: Array.isArray(obj.add) ? (obj.add as string[]) : empty.add,
-    modify: Array.isArray(obj.modify) ? (obj.modify as string[]) : empty.modify,
-    remove: Array.isArray(obj.remove) ? (obj.remove as string[]) : empty.remove,
-  };
+function normalizeTriggerActions(list: unknown, templates: string[]): TriggerAction[] {
+  if (!Array.isArray(list)) return [];
+  const out: TriggerAction[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const template = (item as any).template;
+    if (typeof template !== "string") continue;
+    const width = Number((item as any).widthPx);
+    const height = Number((item as any).heightPx);
+    out.push({
+      template,
+      widthPx:
+        Number.isInteger(width) && width > 0
+          ? width
+          : DEFAULT_RENDER_DIMENSIONS.widthPx,
+      heightPx:
+        Number.isInteger(height) && height > 0
+          ? height
+          : DEFAULT_RENDER_DIMENSIONS.heightPx,
+    });
+  }
+  return out;
 }
 
-function normalizeDimensions(input: unknown): SetDimensions | undefined {
-  if (input === undefined || input === null) return undefined;
-  if (typeof input !== "object" || Array.isArray(input)) return undefined;
-  return input as SetDimensions;
+function normalizeTriggers(input: unknown, templates: string[]): SetTriggers {
+  if (!input || typeof input !== "object") {
+    return { add: [], modify: [] };
+  }
+  const obj = input as Record<string, unknown>;
+  return {
+    add: normalizeTriggerActions(obj.add, templates),
+    modify: normalizeTriggerActions(obj.modify, templates),
+  };
 }
 
 // =====================================================================
@@ -102,7 +138,8 @@ function normalizeDimensions(input: unknown): SetDimensions | undefined {
  * /api/set:
  *   post:
  *     summary: Create a set
- *     description: Create a new set. A set must have at least one attached template. Triggers default to "render every attached template on every event" when omitted.
+ *     description: Create a new set. A set must have at least one attached template. Triggers default to rendering every attached template on add and modify using the default dimensions.
+ *     tags: [Sets]
  *     security:
  *       - apiKey: []
  *     requestBody:
@@ -131,16 +168,24 @@ function normalizeDimensions(input: unknown): SetDimensions | undefined {
  *               triggers:
  *                 type: object
  *                 properties:
- *                   add:    { type: array, items: { type: string } }
- *                   modify: { type: array, items: { type: string } }
- *                   remove: { type: array, items: { type: string } }
- *               dimensions:
- *                 type: object
- *                 additionalProperties:
- *                   type: object
- *                   properties:
- *                     width: { type: integer, example: 1200 }
- *                     height: { type: integer, example: 800 }
+ *                   add:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       required: [template, widthPx, heightPx]
+ *                       properties:
+ *                         template: { type: string, example: "badge.html" }
+ *                         widthPx: { type: integer, example: 1200 }
+ *                         heightPx: { type: integer, example: 800 }
+ *                   modify:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       required: [template, widthPx, heightPx]
+ *                       properties:
+ *                         template: { type: string, example: "badge.html" }
+ *                         widthPx: { type: integer, example: 1200 }
+ *                         heightPx: { type: integer, example: 800 }
  *     responses:
  *       201: { description: Set created }
  *       400: { description: Bad request }
@@ -152,15 +197,12 @@ router.post("/", async (req, res) => {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const { name, description, fields, templates, triggers, dimensions } = req.body ?? {};
+    const { name, description, fields, templates, triggers } = req.body ?? {};
     if (typeof name !== "string" || name.trim() === "") {
       return res.status(400).json({ error: "name is required" });
     }
     const fieldsError = validateFields(fields);
     if (fieldsError) return res.status(400).json({ error: fieldsError });
-
-    const dimensionsError = validateDimensions(dimensions, templates as string[]);
-    if (dimensionsError) return res.status(400).json({ error: dimensionsError });
 
     if (!Array.isArray(templates) || templates.length === 0) {
       return res
@@ -177,15 +219,13 @@ router.post("/", async (req, res) => {
       }
     }
 
-    const tr = normalizeTriggers(triggers ?? defaultTriggersFor(templates as string[]));
-    for (const list of [tr.add, tr.modify, tr.remove]) {
-      for (const t of list) {
-        if (!(templates as string[]).includes(t)) {
-          return res
-            .status(400)
-            .json({ error: `trigger references template not attached to set: ${t}` });
-        }
-      }
+    let tr: SetTriggers;
+    if (triggers === undefined || triggers === null) {
+      tr = defaultTriggersFor(templates as string[]);
+    } else {
+      const triggersError = validateTriggers(triggers, templates as string[]);
+      if (triggersError) return res.status(400).json({ error: triggersError });
+      tr = normalizeTriggers(triggers, templates as string[]);
     }
 
     const coverageErrors = await validateTemplateFieldCoverage(
@@ -206,7 +246,6 @@ router.post("/", async (req, res) => {
       fields: fields as SetField[],
       templates: templates as string[],
       triggers: tr,
-      dimensions: normalizeDimensions(dimensions),
     });
     if (!created) {
       return res.status(409).json({ error: "A set with this name already exists" });
@@ -218,7 +257,6 @@ router.post("/", async (req, res) => {
         fields: decodeSetFields(created),
         templates: decodeSetTemplates(created),
         triggers: decodeSetTriggers(created),
-        dimensions: decodeSetDimensions(created),
       },
     });
   } catch (error) {
@@ -233,6 +271,7 @@ router.post("/", async (req, res) => {
  *   get:
  *     summary: List sets
  *     description: List all sets owned by the authenticated user.
+ *     tags: [Sets]
  *     security:
  *       - apiKey: []
  *     responses:
@@ -252,7 +291,6 @@ router.get("/", async (req, res) => {
         fields: decodeSetFields(row),
         templates: decodeSetTemplates(row),
         triggers: decodeSetTriggers(row),
-        dimensions: decodeSetDimensions(row),
       })),
     });
   } catch (error) {
@@ -267,6 +305,7 @@ router.get("/", async (req, res) => {
  *   get:
  *     summary: Get a set
  *     description: Get a single set (with decoded JSON shapes).
+ *     tags: [Sets]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -283,8 +322,8 @@ router.get("/:setId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const row = own.set;
@@ -295,7 +334,6 @@ router.get("/:setId", async (req, res) => {
         fields: decodeSetFields(row),
         templates: decodeSetTemplates(row),
         triggers: decodeSetTriggers(row),
-        dimensions: decodeSetDimensions(row),
       },
       unusedTemplates: unusedTemplatesForSet(row),
     });
@@ -310,7 +348,8 @@ router.get("/:setId", async (req, res) => {
  * /api/set/{setId}:
  *   patch:
  *     summary: Update a set
- *     description: Update a set's metadata, fields, templates, or triggers. Cannot be used to change ownership. Re-applying triggers re-runs nothing immediately; triggers only fire on entry events.
+ *     description: Update a set's metadata, fields, templates, or triggers. Cannot be used to change ownership.
+ *     tags: [Sets]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -341,9 +380,24 @@ router.get("/:setId", async (req, res) => {
  *               triggers:
  *                 type: object
  *                 properties:
- *                   add:    { type: array, items: { type: string } }
- *                   modify: { type: array, items: { type: string } }
- *                   remove: { type: array, items: { type: string } }
+ *                   add:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       required: [template, widthPx, heightPx]
+ *                       properties:
+ *                         template: { type: string }
+ *                         widthPx: { type: integer }
+ *                         heightPx: { type: integer }
+ *                   modify:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       required: [template, widthPx, heightPx]
+ *                       properties:
+ *                         template: { type: string }
+ *                         widthPx: { type: integer }
+ *                         heightPx: { type: integer }
  *     responses:
  *       200: { description: Set updated }
  *       400: { description: Bad request }
@@ -353,8 +407,8 @@ router.patch("/:setId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
@@ -363,7 +417,6 @@ router.patch("/:setId", async (req, res) => {
       fields?: SetField[];
       templates?: string[];
       triggers?: SetTriggers;
-      dimensions?: SetDimensions;
     } = {};
     if (req.body?.description !== undefined) {
       patch.description =
@@ -386,42 +439,12 @@ router.patch("/:setId", async (req, res) => {
       }
       patch.templates = req.body.templates as string[];
     }
-    if (req.body?.dimensions !== undefined) {
-      const effectiveTemplates = patch.templates ?? decodeSetTemplates(own.set);
-      const dimensionsError = validateDimensions(req.body.dimensions, effectiveTemplates);
-      if (dimensionsError) return res.status(400).json({ error: dimensionsError });
-      patch.dimensions = req.body.dimensions as SetDimensions;
-    }
     if (req.body?.triggers !== undefined) {
-      patch.triggers = normalizeTriggers(req.body.triggers);
-    }
-    // Cross-check: triggers still reference only attached templates
-    const effectiveTemplates = patch.templates ?? decodeSetTemplates(own.set);
-    const effectiveTriggers = patch.triggers ?? decodeSetTriggers(own.set);
-    for (const list of [
-      effectiveTriggers.add,
-      effectiveTriggers.modify,
-      effectiveTriggers.remove,
-    ]) {
-      for (const t of list) {
-        if (!effectiveTemplates.includes(t)) {
-          return res
-            .status(400)
-            .json({ error: `trigger references template not attached to set: ${t}` });
-        }
-      }
-    }
-
-    const effectiveFields = patch.fields ?? decodeSetFields(own.set);
-    const coverageErrors = await validateTemplateFieldCoverage(
-      effectiveFields,
-      effectiveTemplates,
-    );
-    if (coverageErrors.length > 0) {
-      return res.status(400).json({
-        error: "Set fields do not cover all template variables",
-        coverageErrors,
-      });
+      const effectiveTemplates = patch.templates ?? decodeSetTemplates(own.set);
+      const triggersError = validateTriggers(req.body.triggers, effectiveTemplates);
+      if (triggersError) return res.status(400).json({ error: triggersError });
+      const tr = normalizeTriggers(req.body.triggers, effectiveTemplates);
+      patch.triggers = tr;
     }
 
     const updated = await updateSet(setId, patch);
@@ -433,7 +456,6 @@ router.patch("/:setId", async (req, res) => {
         fields: decodeSetFields(updated),
         templates: decodeSetTemplates(updated),
         triggers: decodeSetTriggers(updated),
-        dimensions: decodeSetDimensions(updated),
       },
     });
   } catch (error) {
@@ -448,6 +470,7 @@ router.patch("/:setId", async (req, res) => {
  *   delete:
  *     summary: Delete a set
  *     description: Delete a set and all of its entries. Linked generated images are NOT automatically deleted.
+ *     tags: [Sets]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -464,8 +487,8 @@ router.delete("/:setId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
@@ -488,6 +511,7 @@ router.delete("/:setId", async (req, res) => {
  *   get:
  *     summary: List set fields
  *     description: Returns the set's declared fields plus a list of keys actually observed on its entries.
+ *     tags: [Sets]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -504,8 +528,8 @@ router.get("/:setId/fields", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const { declared, observed } = await getSetFields(setId);
@@ -526,6 +550,7 @@ router.get("/:setId/fields", async (req, res) => {
  *   post:
  *     summary: Add an entry
  *     description: "Create a new entry on the set. Triggers the `add` event: linked templates render new images linked to this entry."
+ *     tags: [Entries]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -556,8 +581,8 @@ router.post("/:setId/entry", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
@@ -602,6 +627,7 @@ router.post("/:setId/entry", async (req, res) => {
  *   get:
  *     summary: List entries
  *     description: List every entry in the set (with decoded data). Optionally include linked images per entry.
+ *     tags: [Entries]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -623,8 +649,8 @@ router.get("/:setId/entry", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const rows = await getEntriesBySetId(setId);
@@ -650,6 +676,7 @@ router.get("/:setId/entry", async (req, res) => {
  * /api/set/{setId}/entry/{entryId}:
  *   get:
  *     summary: Get a single entry
+ *     tags: [Entries]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -671,9 +698,9 @@ router.get("/:setId/entry/:entryId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    const entryId = parseInt(req.params.entryId);
-    if (isNaN(setId) || isNaN(entryId)) {
+    const setId = parseIntParam(req.params.setId);
+    const entryId = parseIntParam(req.params.entryId);
+    if (setId === undefined || entryId === undefined) {
       return res.status(400).json({ error: "Invalid id" });
     }
     const own = await assertOwnership(userId, setId);
@@ -698,6 +725,7 @@ router.get("/:setId/entry/:entryId", async (req, res) => {
  *   put:
  *     summary: Update an entry
  *     description: "Replace the data of an entry. Fires the `modify` event: any previously rendered images from listed templates are removed and re-rendered with the new data."
+ *     tags: [Entries]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -730,9 +758,9 @@ router.put("/:setId/entry/:entryId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    const entryId = parseInt(req.params.entryId);
-    if (isNaN(setId) || isNaN(entryId)) {
+    const setId = parseIntParam(req.params.setId);
+    const entryId = parseIntParam(req.params.entryId);
+    if (setId === undefined || entryId === undefined) {
       return res.status(400).json({ error: "Invalid id" });
     }
     const own = await assertOwnership(userId, setId);
@@ -775,7 +803,8 @@ router.put("/:setId/entry/:entryId", async (req, res) => {
  * /api/set/{setId}/entry/{entryId}:
  *   delete:
  *     summary: Delete an entry
- *     description: "Delete an entry. Fires the `remove` event: any images created by the listed templates are deleted from disk and the database."
+ *     description: "Delete an entry. Fires the `remove` event: any images linked to the entry are deleted from disk and the database."
+ *     tags: [Entries]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -797,9 +826,9 @@ router.delete("/:setId/entry/:entryId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    const entryId = parseInt(req.params.entryId);
-    if (isNaN(setId) || isNaN(entryId)) {
+    const setId = parseIntParam(req.params.setId);
+    const entryId = parseIntParam(req.params.entryId);
+    if (setId === undefined || entryId === undefined) {
       return res.status(400).json({ error: "Invalid id" });
     }
     const own = await assertOwnership(userId, setId);
@@ -821,6 +850,147 @@ router.delete("/:setId/entry/:entryId", async (req, res) => {
 });
 
 // =====================================================================
+// /api/set/{setId}/entry/{entryId}/images  --  upload image fields
+// =====================================================================
+
+/**
+ * @openapi
+ * /api/set/{setId}/entry/{entryId}/images:
+ *   post:
+ *     summary: Upload images for entry image fields
+ *     description: |
+ *       Upload one image per declared image field for an existing entry.
+ *       Files are stored persistently under local-blob-storage/set-images and the
+ *       entry data is updated with the public path. Old files for the same field
+ *       are replaced. Re-renders linked templates via the modify trigger.
+ *     tags: [Entries]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: setId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: entryId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               profilephoto:
+ *                 type: string
+ *                 format: binary
+ *                 description: "File for the image field named 'profilephoto'"
+ *     responses:
+ *       200: { description: Entry updated with image paths }
+ *       400: { description: Bad request }
+ *       404: { description: Entry not found }
+ */
+router.post(
+  "/:setId/entry/:entryId/images",
+  upload.any(),
+  async (req, res) => {
+    try {
+      const userId = requireUserId(res);
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const setId = parseIntParam(req.params.setId);
+      const entryId = parseIntParam(req.params.entryId);
+      if (setId === undefined || entryId === undefined) {
+        return res.status(400).json({ error: "Invalid id" });
+      }
+      const own = await assertOwnership(userId, setId);
+      if (!own.ok) return res.status(own.status).json({ error: own.message });
+      const entry = await getEntryInSet(setId, entryId);
+      if (!entry) return res.status(404).json({ error: "Entry not found" });
+
+      const declared = decodeSetFields(own.set);
+      const imageFields = new Set(
+        declared.filter((f) => f.type === "image").map((f) => f.fieldname),
+      );
+      if (imageFields.size === 0) {
+        return res
+          .status(400)
+          .json({ error: "This set has no image fields" });
+      }
+
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      if (!Array.isArray(files) || files.length === 0) {
+        return res.status(400).json({ error: "No image files provided" });
+      }
+
+      const data = decodeEntryData(entry);
+      const uploaded: Record<string, string> = {};
+      const replaced: string[] = [];
+
+      for (const file of files) {
+        if (!imageFields.has(file.fieldname)) continue;
+        const oldPath = data[file.fieldname];
+        if (typeof oldPath === "string" && oldPath.startsWith("set-images/")) {
+          replaced.push(oldPath);
+        }
+        const relativePath = await saveSetImage(
+          setId,
+          entryId,
+          file.fieldname,
+          file.buffer,
+          file.originalname,
+        );
+        data[file.fieldname] = relativePath;
+        uploaded[file.fieldname] = relativePath;
+      }
+
+      if (Object.keys(uploaded).length === 0) {
+        return res
+          .status(400)
+          .json({ error: "No valid image fields uploaded" });
+      }
+
+      // Clean up replaced files in the background.
+      for (const oldPath of replaced) {
+        try {
+          await deleteSetImage(oldPath);
+        } catch (error) {
+          logger.warn({
+            message: "Failed to delete replaced set image",
+            path: oldPath,
+            error: error as Error,
+          });
+        }
+      }
+
+      const updated = await updateEntry(entryId, { data });
+      if (!updated) return res.status(500).json({ error: "Failed to update entry" });
+
+      const triggerResult = await fireTriggers("modify", {
+        userId,
+        set: own.set,
+        entry: updated,
+      });
+
+      return res.json({
+        success: true,
+        entry: { ...updated, data: decodeEntryData(updated) },
+        uploaded,
+        triggers: triggerResult,
+      });
+    } catch (error) {
+      logger.error({
+        message: "Failed to upload entry images",
+        error: error as Error,
+      });
+      return res.status(500).json({ error: "Failed to upload entry images" });
+    }
+  },
+);
+
+// =====================================================================
 // /api/set/{setId}/images  --  bulk listing of all generated images
 // =====================================================================
 
@@ -829,6 +999,7 @@ router.delete("/:setId/entry/:entryId", async (req, res) => {
  * /api/set/{setId}/images:
  *   get:
  *     summary: List all images linked to entries in this set
+ *     tags: [Entries]
  *     security:
  *       - apiKey: []
  *     parameters:
@@ -845,8 +1016,8 @@ router.get("/:setId/images", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const setId = parseInt(req.params.setId);
-    if (isNaN(setId)) return res.status(400).json({ error: "Invalid setId" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 

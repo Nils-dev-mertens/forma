@@ -33,6 +33,15 @@ const swaggerDefinition = {
       description: 'Production server',
         }
     ],
+    tags: [
+        { name: 'Sets', description: 'Manage reusable sets of fields and templates' },
+        { name: 'Entries', description: 'Create and update records inside a set' },
+        { name: 'Templates', description: 'Upload and inspect HTML templates' },
+        { name: 'Generation', description: 'Render images from templates' },
+        { name: 'Generated Images', description: 'Retrieve rendered images' },
+        { name: 'API Keys', description: 'Create and manage API keys' },
+        { name: 'Users', description: 'User management' },
+    ],
     components: {
       securitySchemes: {
         apiKey: {

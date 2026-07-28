@@ -1,6 +1,7 @@
 import { db } from "./client.ts"
 import { User, users } from "./schema.ts"
 import { eq } from "drizzle-orm"
+import { createProfile } from "./profiles.ts"
 
 /**
  * Get all users from the database
@@ -27,6 +28,16 @@ export async function getUserById(userId: number): Promise<User | null> {
  */
 export async function getUserByUsername(username: string): Promise<User | null> {
   const result = await db.select().from(users).where(eq(users.username, username)).limit(1)
+  return result[0] || null
+}
+
+/**
+ * Get a user by email
+ * @param email - The email to search for
+ * @returns Promise<User | null> - The user if found, null otherwise
+ */
+export async function getUserByEmail(email: string): Promise<User | null> {
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1)
   return result[0] || null
 }
 
@@ -58,7 +69,12 @@ export async function createUser(username: string, email: string, passwordHash: 
     updatedAt: new Date()
   }).returning()
 
-  return result[0] || null
+  const user = result[0] || null
+  if (user) {
+    await createProfile(user.id)
+  }
+
+  return user
 }
 
 /**

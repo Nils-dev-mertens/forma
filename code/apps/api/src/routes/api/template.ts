@@ -22,6 +22,7 @@ const upload = multer({
  *   post:
  *     summary: Upload a template
  *     description: Upload a template file that will be associated with the authenticated user.
+ *     tags: [Templates]
  *     security:
  *       - apiKey: []
  *     requestBody:
@@ -110,6 +111,7 @@ router.post("/upload", upload.single("template"), async (req, res) => {
  *   get:
  *     summary: Get template fields
  *     description: Retrieve the extractable fields from a template file. Only returns fields for templates owned by the authenticated user.
+ *     tags: [Templates]
  *     security:
  *       - apiKey: []
  *     parameters:

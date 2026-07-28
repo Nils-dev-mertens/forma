@@ -62,26 +62,7 @@ describe("Set template field coverage validation", () => {
     expect(res.body.success).toBe(true);
   });
 
-  test("rejects dimensions for templates not attached to the set", async () => {
-    const res = await request(app)
-      .post("/api/set")
-      .send({
-        name: `bad-dim-set-${Date.now()}`,
-        fields: [
-          { fieldname: "name", type: "string" },
-          { fieldname: "title", type: "string" },
-        ],
-        templates: [templateName],
-        dimensions: {
-          "other.html": { width: 400, height: 300 },
-        },
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('dimensions key');
-  });
-
-  test("accepts image field type and per-template dimensions", async () => {
+  test("accepts image field type and per-template trigger dimensions", async () => {
     const res = await request(app)
       .post("/api/set")
       .send({
@@ -92,15 +73,80 @@ describe("Set template field coverage validation", () => {
           { fieldname: "profilephoto", type: "image" },
         ],
         templates: [templateName],
-        dimensions: {
-          [templateName]: { width: 800, height: 600 },
+        triggers: {
+          add: [{ template: templateName, widthPx: 800, heightPx: 600 }],
+          modify: [{ template: templateName, widthPx: 400, heightPx: 300 }],
         },
       });
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.set.dimensions[templateName]).toEqual({ width: 800, height: 600 });
+    expect(res.body.set.triggers).toEqual({
+      add: [{ template: templateName, widthPx: 800, heightPx: 600 }],
+      modify: [{ template: templateName, widthPx: 400, heightPx: 300 }],
+    });
     const imageField = res.body.set.fields.find((f: any) => f.fieldname === "profilephoto");
     expect(imageField.type).toBe("image");
   });
+
+  test("rejects trigger actions referencing templates not attached to the set", async () => {
+    const res = await request(app)
+      .post("/api/set")
+      .send({
+        name: `bad-triggers-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string" },
+          { fieldname: "title", type: "string" },
+        ],
+        templates: [templateName],
+        triggers: {
+          add: [{ template: "other.html", widthPx: 800, heightPx: 600 }],
+          modify: [],
+        },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("trigger references template not attached");
+  });
+});
+
+describe("Entry image field upload", () => {
+  const templateName = `image-upload-test-${Date.now()}.html`;
+
+  beforeAll(async () => {
+    const html = "<h1>{{ name }}</h1><img src=\"{{ profilephoto }}\">";
+    await saveTemplate(templateName, html);
+    const template = await createTemplate(1, templateName, html);
+    if (!template) throw new Error("Failed to create test template");
+  });
+
+  test("uploads an image for an entry image field", async () => {
+    const setRes = await request(app)
+      .post("/api/set")
+      .send({
+        name: `upload-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string", required: true },
+          { fieldname: "profilephoto", type: "image" },
+        ],
+        templates: [templateName],
+        triggers: { add: [], modify: [] },
+      });
+    expect(setRes.status).toBe(201);
+    const setId = setRes.body.set.id;
+
+    const entryRes = await request(app)
+      .post(`/api/set/${setId}/entry`)
+      .send({ data: { name: "Ada", profilephoto: "" } });
+    expect(entryRes.status).toBe(201);
+    const entryId = entryRes.body.entry.id;
+
+    const uploadRes = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach("profilephoto", Buffer.from("fake-image-data"), "profilephoto.png");
+
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.body.success).toBe(true);
+    expect(uploadRes.body.entry.data.profilephoto).toMatch(/^set-images\//);
+  }, 10000);
 });

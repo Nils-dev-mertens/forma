@@ -6,14 +6,14 @@ export function fillTemplate(
     htmlContent: string,
     data: StructuredData,
 ): string {
-    const replacedHtml = htmlContent.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) =>
+    const replacedHtml = htmlContent.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) =>
         String(data.records[key] ?? ""),
     );
     return replacedHtml;
 }
 
 export function getTemplateFields(html: string): string[] {
-    const matches = html.match(/\{\{([\w\s]+)\}\}/g) ?? [];
+    const matches = html.match(/\{\{([\w\s.]+)\}\}/g) ?? [];
     return [...new Set(
         matches.map(m => m.slice(2, -2).trim())
     )];

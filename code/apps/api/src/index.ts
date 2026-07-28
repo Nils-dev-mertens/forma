@@ -1,8 +1,6 @@
 import { origin, port } from "./config"
-import express from "express";
-import {
-    ensureDirs
-} from "@repo/storage";
+import express from "express";import { ensureDirs, SET_IMAGES_DIR, PROFILE_LOGOS_DIR } from "@repo/storage";
+import { join } from "path";
 import path from "path";
 import swaggerUi from "swagger-ui-express";
 import swaggerJSDoc from "swagger-jsdoc";
@@ -31,6 +29,8 @@ app.use(express.json());
 app.use("/api", apiRoute)
 
 app.use("/tempphotos", express.static(tempDir));
+app.use("/set-images", express.static(SET_IMAGES_DIR));
+app.use("/profile-logos", express.static(PROFILE_LOGOS_DIR));
 
 app.listen(port, async () => {
     await ensureDirs();

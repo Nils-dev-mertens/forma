@@ -6,7 +6,13 @@ import { rm, rename } from "fs/promises";
 import multer from "multer";
 import path, { join } from "path"
 import { origin } from "../../../config";
-import { createImage, getTemplateByName } from "@repo/db";
+import {
+  createImage,
+  getTemplateByName,
+  getProfileByUserId,
+  profileToRecords,
+} from "@repo/db";
+import { getProfileLogo, isProfileLogoPath } from "@repo/storage";
 
 const router: Router = Router();
 
@@ -16,12 +22,62 @@ const upload = multer({
     dest: tempDir,
 });
 
+const MIME_TYPES: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+};
+
+function mimeTypeForImage(relativePath: string): string {
+    const ext = relativePath.split(".").pop()?.toLowerCase() || "png";
+    return MIME_TYPES[ext] ?? "image/png";
+}
+
+/**
+ * Merge the user's identity profile into the template records and resolve any
+ * profile logo path to a base64 data URL.
+ */
+async function mergeProfileIntoRecords(
+    userId: number,
+    records: Record<string, string>,
+): Promise<Record<string, string>> {
+    const profile = await getProfileByUserId(userId);
+    if (!profile) return records;
+
+    const profileRecords = profileToRecords(profile);
+    for (const [key, value] of Object.entries(profileRecords)) {
+        records[key] = value;
+    }
+
+    for (const [key, value] of Object.entries(records)) {
+        if (typeof value === "string" && isProfileLogoPath(value)) {
+            try {
+                const buffer = await getProfileLogo(value);
+                if (buffer) {
+                    const mime = mimeTypeForImage(value);
+                    records[key] = `data:${mime};base64,${buffer.toString("base64")}`;
+                }
+            } catch (error) {
+                // Soft-fail: keep the original relative path if the file is missing
+                // or unreadable; the template will show a broken image instead of
+                // blocking the whole render.
+            }
+        }
+    }
+
+    return records;
+}
+
 /**
  * @openapi
  * /api/generation/image/:
  *   post:
  *     summary: Generate an image from template
  *     description: Generate an image by uploading temporary images and providing template data. The generated image will be associated with the authenticated user.
+ *     tags: [Generation]
  *     security:
  *       - apiKey: []
  *     requestBody:
@@ -110,7 +166,12 @@ router.post("/", upload.array("images"), async (req, res) => {
         });
 
         const userId = res.locals.user?.id;
-        
+
+        // Merge identity profile values into the template records
+        if (input.data?.records && userId) {
+            input.data.records = await mergeProfileIntoRecords(userId, input.data.records);
+        }
+
         // Verify template ownership if template is specified
         if (input.templatename) {
             const templateRecord = await getTemplateByName(userId!, input.templatename);
@@ -156,6 +217,7 @@ router.post("/", upload.array("images"), async (req, res) => {
  *   post:
  *     summary: Generate an image from template (strict mode)
  *     description: Generate an image using strict template rendering. The generated image will be associated with the authenticated user.
+ *     tags: [Generation]
  *     security:
  *       - apiKey: []
  *     requestBody:
@@ -219,6 +281,11 @@ router.post("/strict", async (req, res) => {
         if (!input || !imagename || !userId) {
             res.status(400).send("Missing input or imagename");
             return;
+        }
+
+        // Merge identity profile values into the template records
+        if (input.data?.records) {
+            input.data.records = await mergeProfileIntoRecords(userId, input.data.records);
         }
 
         // Verify template ownership if template is specified
