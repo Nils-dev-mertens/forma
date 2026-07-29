@@ -7,11 +7,26 @@ import keyRoute from "./key"
 import photoRoute from "./photos"
 import userRoute from "./users"
 import setRoute from "./set"
+import aiRoute from "./ai"
+import authRoute from "./auth"
 
 const router:Router = Router();
 
 export const AuthHandler: RequestHandler = async (req, res, next) => {
     const rawKey = req.headers["x-api-key"] || req.headers.authorization;
+
+    // Session-based auth takes priority for the dashboard.
+    const sessionUserId = (req.session as any)?.userId;
+    if (sessionUserId) {
+        res.locals.user = {
+            id: sessionUserId,
+            keyId: null,
+            keyPrefix: null,
+            authenticated: true,
+            authenticationMethod: "session"
+        };
+        return next();
+    }
 
     // In development, allow unauthenticated requests but still validate keys
     // when they are provided. This lets Swagger with an API key work while
@@ -145,5 +160,7 @@ router.use("/key", keyRoute)
 router.use("/photos", photoRoute)
 router.use("/users", userRoute)
 router.use("/set", setRoute)
+router.use("/ai", aiRoute)
+router.use("/auth", authRoute)
 
 export default router;

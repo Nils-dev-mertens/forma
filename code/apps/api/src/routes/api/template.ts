@@ -6,11 +6,62 @@ import { Router } from "express";
 import { readFile } from "fs/promises";
 import multer from "multer";
 import path from "path";
-import { createTemplate, getTemplateByName } from "@repo/db";
+import { createTemplate, getTemplateByName, getTemplatesByUserId } from "@repo/db";
 
 const router: Router = Router();
 
 const tempDir = path.resolve(process.cwd(), "../../local-blob-storage/temp");
+
+/**
+ * @openapi
+ * /api/template:
+ *   get:
+ *     summary: List templates
+ *     description: List all templates owned by the authenticated user.
+ *     tags: [Templates]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: Templates listed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 templates:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: integer }
+ *                       userId: { type: integer }
+ *                       name: { type: string }
+ *                       content: { type: string }
+ *                       createdAt: { type: string, format: date-time }
+ *                       updatedAt: { type: string, format: date-time }
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to list templates
+ */
+router.get("/", async (req, res) => {
+  try {
+    const userId = res.locals.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const templates = await getTemplatesByUserId(userId);
+    return res.json({ success: true, templates });
+  } catch (error) {
+    logger.error({ error: error as Error });
+    res.status(500).json({ error: "Failed to list templates" });
+  }
+});
 
 const upload = multer({
     dest: tempDir,

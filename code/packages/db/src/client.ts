@@ -38,10 +38,25 @@ export async function initializeDatabase() {
         email TEXT NOT NULL UNIQUE,
         username TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
+        onboarding_completed INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Migrate: add onboarding_completed column to existing users table
+    try {
+      const existingUserColumns = sqlite
+        .query("PRAGMA table_info(users)")
+        .all() as Array<{ name: string }>;
+      const hasOnboardingCompleted = existingUserColumns.some((c) => c.name === "onboarding_completed");
+      if (!hasOnboardingCompleted) {
+        db.run(`ALTER TABLE users ADD COLUMN onboarding_completed INTEGER NOT NULL DEFAULT 0;`);
+        console.log("Added users.onboarding_completed column");
+      }
+    } catch (error) {
+      console.warn("Could not migrate users.onboarding_completed:", error);
+    }
     
     db.run(`
       CREATE TABLE IF NOT EXISTS api_keys (
@@ -193,6 +208,48 @@ export async function initializeDatabase() {
 
     db.run(
       `CREATE INDEX IF NOT EXISTS entries_set_id_idx ON entries (set_id);`,
+    );
+
+    // Create AI keys table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ai_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'openai',
+        encrypted_key TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE (user_id)
+      );
+    `);
+
+    // Create AI sessions table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ai_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        context_template_name TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Create AI messages table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ai_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES ai_sessions(id) ON DELETE CASCADE
+      );
+    `);
+
+    db.run(
+      `CREATE INDEX IF NOT EXISTS ai_messages_session_id_idx ON ai_messages(session_id);`,
     );
 
     console.log('Database initialized and tables created');

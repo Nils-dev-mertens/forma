@@ -1,5 +1,7 @@
 import { origin, port } from "./config"
-import express from "express";import { ensureDirs, SET_IMAGES_DIR, PROFILE_LOGOS_DIR } from "@repo/storage";
+import express from "express";
+import cookieSession from "cookie-session";
+import { ensureDirs, SET_IMAGES_DIR, PROFILE_LOGOS_DIR } from "@repo/storage";
 import { join } from "path";
 import path from "path";
 import swaggerUi from "swagger-ui-express";
@@ -25,6 +27,18 @@ if (process.env.NODE_ENV === "development") {
 }
 
 app.use(express.json());
+
+app.set("trust proxy", 1);
+app.use(
+  cookieSession({
+    name: "session",
+    keys: [process.env.SESSION_SECRET ?? "development-secret-change-in-production"],
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    httpOnly: true,
+  })
+);
 
 app.use("/api", apiRoute)
 

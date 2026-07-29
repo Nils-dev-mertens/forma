@@ -7,6 +7,7 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  onboardingCompleted: integer('onboarding_completed', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
@@ -104,6 +105,34 @@ export const images = sqliteTable('images', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
+// AI provider keys table - encrypted user-provided API keys.
+export const aiKeys = sqliteTable('ai_keys', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
+  provider: text('provider').notNull().default('openai'),
+  encryptedKey: text('encrypted_key').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
+// AI chat sessions table - keeps context across requests.
+export const aiSessions = sqliteTable('ai_sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  contextTemplateName: text('context_template_name'), // existing template being edited, if any
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
+// AI chat messages table - persisted history for a session.
+export const aiMessages = sqliteTable('ai_messages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id').notNull().references(() => aiSessions.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(), // 'user' | 'assistant'
+  content: text('content').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   apiKeys: many(apiKeys),
@@ -177,6 +206,28 @@ export const imagesRelations = relations(images, ({ one }) => ({
   }),
 }));
 
+export const aiKeysRelations = relations(aiKeys, ({ one }) => ({
+  user: one(users, {
+    fields: [aiKeys.userId],
+    references: [users.id],
+  }),
+}));
+
+export const aiSessionsRelations = relations(aiSessions, ({ one, many }) => ({
+  user: one(users, {
+    fields: [aiSessions.userId],
+    references: [users.id],
+  }),
+  messages: many(aiMessages),
+}));
+
+export const aiMessagesRelations = relations(aiMessages, ({ one }) => ({
+  session: one(aiSessions, {
+    fields: [aiMessages.sessionId],
+    references: [aiSessions.id],
+  }),
+}));
+
 // Types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -194,3 +245,9 @@ export type Set = typeof sets.$inferSelect;
 export type NewSet = typeof sets.$inferInsert;
 export type Entry = typeof entries.$inferSelect;
 export type NewEntry = typeof entries.$inferInsert;
+export type AiKey = typeof aiKeys.$inferSelect;
+export type NewAiKey = typeof aiKeys.$inferInsert;
+export type AiSession = typeof aiSessions.$inferSelect;
+export type NewAiSession = typeof aiSessions.$inferInsert;
+export type AiMessage = typeof aiMessages.$inferSelect;
+export type NewAiMessage = typeof aiMessages.$inferInsert;

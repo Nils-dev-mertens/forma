@@ -8,6 +8,9 @@ export const origin =
         ? process.env.ORIGIN
         : `http://localhost:${port}`;
 
+export const aiEncryptionKey : string | undefined = process.env.AI_ENCRYPTION_KEY;
+export const aiDefaultModel : string = process.env.AI_DEFAULT_MODEL ?? "gpt-4o-mini";
+
 const swaggerDefinition = {
   openapi: '3.0.0',
     info: {

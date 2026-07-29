@@ -626,7 +626,11 @@ router.post(
   upload.single("logo"),
   async (req, res) => {
     try {
-      const userId = parseInt(req.params.userId)
+      const rawUserId = req.params.userId
+      if (typeof rawUserId !== "string") {
+        return res.status(400).json({ error: "Invalid user ID" })
+      }
+      const userId = parseInt(rawUserId, 10)
 
       if (isNaN(userId)) {
         return res.status(400).json({ error: "Invalid user ID" })

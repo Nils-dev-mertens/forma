@@ -3,8 +3,6 @@ import { profiles, type Profile, type NewProfile } from "./schema.ts";
 import { eq } from "drizzle-orm";
 
 export interface ProfileBrandColors {
-  primary?: string;
-  secondary?: string;
   [key: string]: string | undefined;
 }
 

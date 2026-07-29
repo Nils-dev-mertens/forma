@@ -1,5 +1,6 @@
 import { db } from "./client.ts"
-import { User, users } from "./schema.ts"
+import type { User } from "./schema.ts"
+import { users } from "./schema.ts"
 import { eq } from "drizzle-orm"
 import { createProfile } from "./profiles.ts"
 
@@ -83,7 +84,7 @@ export async function createUser(username: string, email: string, passwordHash: 
  * @param updates - Object containing fields to update
  * @returns Promise<User | null> - The updated user if successful, null otherwise
  */
-export async function updateUser(userId: number, updates: Partial<Omit<User, "id" | "createdAt">>): Promise<User | null> {
+export async function updateUser(userId: number, updates: Partial<Omit<User, "id" | "createdAt" | "onboardingCompleted">>): Promise<User | null> {
   const result = await db.update(users)
     .set({ ...updates, updatedAt: new Date() })
     .where(eq(users.id, userId))
@@ -97,6 +98,20 @@ export async function updateUser(userId: number, updates: Partial<Omit<User, "id
  * @param userId - The ID of the user to delete
  * @returns Promise<boolean> - True if deletion was successful, false otherwise
  */
+/**
+ * Mark a user's onboarding as completed.
+ * @param userId - The ID of the user
+ * @returns Promise<User | null> - The updated user if successful, null otherwise
+ */
+export async function markOnboardingComplete(userId: number): Promise<User | null> {
+  const result = await db.update(users)
+    .set({ onboardingCompleted: true, updatedAt: new Date() })
+    .where(eq(users.id, userId))
+    .returning()
+
+  return result[0] || null
+}
+
 export async function deleteUser(userId: number): Promise<boolean> {
   const result = await db.delete(users).where(eq(users.id, userId)).run()
   
