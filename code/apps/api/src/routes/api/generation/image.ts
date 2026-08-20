@@ -12,7 +12,7 @@ import {
   getProfileByUserId,
   profileToRecords,
 } from "@repo/db";
-import { getProfileLogo, isProfileLogoPath } from "@repo/storage";
+import { imagePathToDataUrl } from "../../../services/imageDataUrls.ts";
 
 const router: Router = Router();
 
@@ -22,23 +22,9 @@ const upload = multer({
     dest: tempDir,
 });
 
-const MIME_TYPES: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-};
-
-function mimeTypeForImage(relativePath: string): string {
-    const ext = relativePath.split(".").pop()?.toLowerCase() || "png";
-    return MIME_TYPES[ext] ?? "image/png";
-}
-
 /**
  * Merge the user's identity profile into the template records and resolve any
- * profile logo path to a base64 data URL.
+ * stored image path (profile logo or set image) to a base64 data URL.
  */
 async function mergeProfileIntoRecords(
     userId: number,
@@ -53,18 +39,14 @@ async function mergeProfileIntoRecords(
     }
 
     for (const [key, value] of Object.entries(records)) {
-        if (typeof value === "string" && isProfileLogoPath(value)) {
-            try {
-                const buffer = await getProfileLogo(value);
-                if (buffer) {
-                    const mime = mimeTypeForImage(value);
-                    records[key] = `data:${mime};base64,${buffer.toString("base64")}`;
-                }
-            } catch (error) {
-                // Soft-fail: keep the original relative path if the file is missing
-                // or unreadable; the template will show a broken image instead of
-                // blocking the whole render.
-            }
+        if (typeof value !== "string") continue;
+        try {
+            const dataUrl = await imagePathToDataUrl(value);
+            if (dataUrl) records[key] = dataUrl;
+        } catch (error) {
+            // Soft-fail: keep the original relative path if the file is missing
+            // or unreadable; the template will show a broken image instead of
+            // blocking the whole render.
         }
     }
 

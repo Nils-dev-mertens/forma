@@ -1,11 +1,26 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import express from "express";
 import request from "supertest";
+import { existsSync } from "fs";
+import { join } from "path";
 
 process.env.FORMA_DB_PATH = ":memory:";
 
-import { initializeDatabase, createUser, createTemplate } from "@repo/db";
-import { saveTemplate } from "@repo/storage";
+import {
+  initializeDatabase,
+  createUser,
+  createTemplate,
+  createImage,
+  linkImageToEntry,
+  getImageByName,
+  getImagesByEntryId,
+} from "@repo/db";
+import {
+  saveTemplate,
+  saveGeneratedImage,
+  getGeneratedImage,
+  SET_IMAGES_DIR,
+} from "@repo/storage";
 import setRoute from "../src/routes/api/set";
 
 const app = express();
@@ -181,5 +196,194 @@ describe("Entry image field upload", () => {
 
     expect(uploadRes.status).toBe(400);
     expect(uploadRes.body.error).toContain("Unable to read image dimensions");
+  }, 10000);
+});
+
+describe("SVG and AVIF set image uploads", () => {
+  const templateName = `format-upload-test-${Date.now()}.html`;
+  const svgBuffer = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24"/></svg>',
+  );
+  // Minimal AVIF container: ftyp(major brand avif) + meta/iprp/ipco/ispe (1x1).
+  const avifBuffer = (() => {
+    const buf = Buffer.alloc(72);
+    buf.writeUInt32BE(24, 0);
+    buf.write("ftyp", 4, "ascii");
+    buf.write("avif", 8, "ascii");
+    buf.writeUInt32BE(0, 12);
+    buf.write("avif", 16, "ascii");
+    buf.write("mif1", 20, "ascii");
+    buf.writeUInt32BE(48, 24);
+    buf.write("meta", 28, "ascii");
+    buf.writeUInt32BE(0, 32);
+    buf.writeUInt32BE(36, 36);
+    buf.write("iprp", 40, "ascii");
+    buf.writeUInt32BE(28, 44);
+    buf.write("ipco", 48, "ascii");
+    buf.writeUInt32BE(20, 52);
+    buf.write("ispe", 56, "ascii");
+    buf.writeUInt32BE(0, 60);
+    buf.writeUInt32BE(1, 64);
+    buf.writeUInt32BE(1, 68);
+    return buf;
+  })();
+
+  beforeAll(async () => {
+    const html = "<h1>{{ name }}</h1><img src=\"{{ profilephoto }}\">";
+    await saveTemplate(templateName, html);
+    const template = await createTemplate(1, templateName, html);
+    if (!template) throw new Error("Failed to create test template");
+  });
+
+  async function makeSetWithEntry() {
+    const setRes = await request(app)
+      .post("/api/set")
+      .send({
+        name: `format-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string", required: true },
+          { fieldname: "profilephoto", type: "image" },
+        ],
+        templates: [templateName],
+        triggers: { add: [], modify: [] },
+      });
+    expect(setRes.status).toBe(201);
+    const setId = setRes.body.set.id;
+    const entryRes = await request(app)
+      .post(`/api/set/${setId}/entry`)
+      .send({ data: { name: "Ada", profilephoto: "" } });
+    expect(entryRes.status).toBe(201);
+    return { setId, entryId: entryRes.body.entry.id };
+  }
+
+  test("accepts an SVG upload", async () => {
+    const { setId, entryId } = await makeSetWithEntry();
+    const res = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach("profilephoto", svgBuffer, "logo.svg");
+    expect(res.status).toBe(200);
+    expect(res.body.entry.data.profilephoto).toMatch(/^set-images\/.*\.svg$/);
+  }, 10000);
+
+  test("accepts an SVG without dimensions (vector, skips dimension checks)", async () => {
+    const { setId, entryId } = await makeSetWithEntry();
+    const res = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach(
+        "profilephoto",
+        Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>'),
+        "logo.svg",
+      );
+    expect(res.status).toBe(200);
+  }, 10000);
+
+  test("accepts an AVIF upload", async () => {
+    const { setId, entryId } = await makeSetWithEntry();
+    const res = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach("profilephoto", avifBuffer, "photo.avif");
+    expect(res.status).toBe(200);
+    expect(res.body.entry.data.profilephoto).toMatch(/^set-images\/.*\.avif$/);
+  }, 10000);
+
+  test("rejects unsupported image types", async () => {
+    const { setId, entryId } = await makeSetWithEntry();
+    const res = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach("profilephoto", Buffer.from("not-an-image"), "photo.bmp");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Unsupported image type");
+  }, 10000);
+});
+
+describe("Set delete cleanup", () => {
+  const templateName = `cleanup-test-${Date.now()}.html`;
+  const onePixelPng = Buffer.from(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000000020001e221bc330000000049454e44ae426082",
+    "hex",
+  );
+
+  beforeAll(async () => {
+    const html = "<h1>{{ name }}</h1><img src=\"{{ profilephoto }}\">";
+    await saveTemplate(templateName, html);
+    const template = await createTemplate(1, templateName, html);
+    if (!template) throw new Error("Failed to create test template");
+  });
+
+  test("deletes set-image folders, generated images, and DB rows when the set is deleted", async () => {
+    const setRes = await request(app)
+      .post("/api/set")
+      .send({
+        name: `cleanup-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string", required: true },
+          { fieldname: "profilephoto", type: "image" },
+        ],
+        templates: [templateName],
+        triggers: { add: [], modify: [] },
+      });
+    expect(setRes.status).toBe(201);
+    const setId = setRes.body.set.id;
+
+    const entryRes = await request(app)
+      .post(`/api/set/${setId}/entry`)
+      .send({ data: { name: "Ada", profilephoto: "" } });
+    expect(entryRes.status).toBe(201);
+    const entryId = entryRes.body.entry.id;
+
+    const uploadRes = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach("profilephoto", onePixelPng, "profilephoto.png");
+    expect(uploadRes.status).toBe(200);
+    const setImageDir = join(SET_IMAGES_DIR, String(setId), String(entryId));
+    expect(existsSync(setImageDir)).toBe(true);
+
+    const genName = `cleanup-generated-${Date.now()}.png`;
+    await saveGeneratedImage(genName, onePixelPng);
+    const image = await createImage(1, null, genName, {
+      template: templateName,
+      entryId,
+      setId,
+    });
+    expect(image).not.toBeNull();
+    await linkImageToEntry(image!.id, entryId);
+
+    const delRes = await request(app).delete(`/api/set/${setId}`);
+    expect(delRes.status).toBe(200);
+    expect(delRes.body.success).toBe(true);
+    expect(delRes.body.deleted).toContain(genName);
+
+    expect(existsSync(setImageDir)).toBe(false);
+    expect(await getGeneratedImage(genName)).toBeNull();
+    expect(await getImageByName(1, genName)).toBeNull();
+    expect(await getImagesByEntryId(entryId)).toEqual([]);
+  }, 10000);
+
+  test("cleans up orphaned images that reference the set but have no entry link", async () => {
+    const setRes = await request(app)
+      .post("/api/set")
+      .send({
+        name: `orphan-cleanup-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string" },
+          { fieldname: "profilephoto", type: "string" },
+        ],
+        templates: [templateName],
+        triggers: { add: [], modify: [] },
+      });
+    expect(setRes.status).toBe(201);
+    const setId = setRes.body.set.id;
+
+    const genName = `orphan-generated-${Date.now()}.png`;
+    await saveGeneratedImage(genName, onePixelPng);
+    const image = await createImage(1, null, genName, { template: templateName, setId });
+    expect(image).not.toBeNull();
+
+    const delRes = await request(app).delete(`/api/set/${setId}`);
+    expect(delRes.status).toBe(200);
+    expect(delRes.body.deleted).toContain(genName);
+
+    expect(await getGeneratedImage(genName)).toBeNull();
+    expect(await getImageByName(1, genName)).toBeNull();
   }, 10000);
 });

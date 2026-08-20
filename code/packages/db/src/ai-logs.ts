@@ -1,6 +1,6 @@
 import { db } from "./client.ts";
 import { aiLogs, type AiLog, type NewAiLog } from "./schema.ts";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, gte, sql, and } from "drizzle-orm";
 
 export interface CreateAiLogInput {
   userId: number;
@@ -10,6 +10,9 @@ export interface CreateAiLogInput {
   system?: string | null;
   prompt?: string | null;
   response?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
   status: "success" | "error";
   error?: string | null;
 }
@@ -25,6 +28,9 @@ export async function createAiLog(input: CreateAiLogInput): Promise<AiLog> {
       system: input.system ?? null,
       prompt: input.prompt ?? null,
       response: input.response ?? null,
+      inputTokens: input.inputTokens ?? null,
+      outputTokens: input.outputTokens ?? null,
+      totalTokens: input.totalTokens ?? null,
       status: input.status,
       error: input.error ?? null,
       createdAt: new Date(),
@@ -47,4 +53,19 @@ export async function getAiLogsByUserId(
     .where(eq(aiLogs.userId, userId))
     .orderBy(desc(aiLogs.createdAt))
     .limit(limit);
+}
+
+/**
+ * Sum the total tokens consumed by a user in successful provider calls since
+ * the given timestamp. Used to enforce per-user token/cost budgets.
+ */
+export async function getAiTokenUsageByUserSince(
+  userId: number,
+  since: Date,
+): Promise<number> {
+  const result = await db
+    .select({ total: sql<number>`COALESCE(SUM(${aiLogs.totalTokens}), 0)` })
+    .from(aiLogs)
+    .where(and(eq(aiLogs.userId, userId), gte(aiLogs.createdAt, since), eq(aiLogs.status, "success")));
+  return result[0]?.total ?? 0;
 }

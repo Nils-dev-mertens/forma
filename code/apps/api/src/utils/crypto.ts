@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { aiEncryptionKey } from "../config.ts";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
@@ -9,6 +8,8 @@ const KEY_LENGTH = 32;
 let cachedKey: Buffer | undefined;
 
 function getKeyOrThrow(): Buffer {
+  // Read the env var lazily so tests can set it after config is loaded.
+  const aiEncryptionKey = process.env.AI_ENCRYPTION_KEY;
   if (!aiEncryptionKey) {
     throw new Error("AI_ENCRYPTION_KEY environment variable is required");
   }

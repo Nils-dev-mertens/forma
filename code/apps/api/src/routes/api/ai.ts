@@ -9,6 +9,7 @@ import {
   addAiMessage,
   updateAiSessionUpdatedAt,
   createAiLog,
+  getAiTokenUsageByUserSince,
   getTemplateByName,
   createTemplate,
 } from "@repo/db";
@@ -19,9 +20,11 @@ import { loadSystemPrompt } from "../../services/ai/prompts.ts";
 import { getTemplate, saveTemplate } from "@repo/storage";
 import { requireUserId } from "../../utils/auth.ts";
 import { validateHtml } from "../../utils/html-validation.ts";
-import { aiDefaultModel, nodeEnv } from "../../config.ts";
+import { aiDefaultModel, aiDailyTokenLimit, nodeEnv } from "../../config.ts";
 
 const router: Router = Router();
+
+const AI_USAGE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
@@ -296,6 +299,7 @@ router.post("/session", async (req, res) => {
  *       400: { description: Bad request }
  *       401: { description: Unauthorized }
  *       404: { description: Session not found }
+ *       429: { description: Daily AI token limit reached }
  */
 router.post("/session/:sessionId/message", async (req, res) => {
   const userId = requireUserId(res);
@@ -342,13 +346,26 @@ router.post("/session/:sessionId/message", async (req, res) => {
 
     await addAiMessage(sessionId, "user", body.text);
 
-    const rawResponse = await generateFromProvider({
+    // Enforce the per-user daily token budget before spending money.
+    if (aiDailyTokenLimit > 0) {
+      const usedTokens = await getAiTokenUsageByUserSince(
+        userId,
+        new Date(Date.now() - AI_USAGE_WINDOW_MS),
+      );
+      if (usedTokens >= aiDailyTokenLimit) {
+        return res.status(429).json({
+          error: `Daily AI token limit reached (${aiDailyTokenLimit} tokens per 24h).`,
+        });
+      }
+    }
+
+    const generation = await generateFromProvider({
       userId,
       system,
       messages: [...previousMessages, { role: "user", content: userPrompt }],
     });
 
-    const parsed = parseAiResponse(rawResponse);
+    const parsed = parseAiResponse(generation.text);
     const text = parsed.text || "Generated a template for you.";
     const html = parsed.html;
 
@@ -363,7 +380,10 @@ router.post("/session/:sessionId/message", async (req, res) => {
         model: aiDefaultModel,
         system,
         prompt: userPrompt,
-        response: rawResponse,
+        response: generation.text,
+        inputTokens: generation.inputTokens,
+        outputTokens: generation.outputTokens,
+        totalTokens: generation.totalTokens,
         status: "success",
       });
     } catch (logError) {

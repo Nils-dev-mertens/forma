@@ -28,6 +28,8 @@ const ALLOWED_IMAGE_TYPES = [
   "image/jpg",
   "image/gif",
   "image/webp",
+  "image/svg+xml",
+  "image/avif",
 ]
 
 const upload = multer({

@@ -1,5 +1,5 @@
 import { generateAndStoreImageFromTemplateStrict, type TemplateGenerationInput } from "@repo/generation";
-import { deleteGeneratedImage, getSetImage, deleteSetImageDirectory, isSetImagePath, getProfileLogo, isProfileLogoPath } from "@repo/storage";
+import { deleteGeneratedImage, deleteSetImageDirectory } from "@repo/storage";
 import { generateRandomName } from "@repo/auth";
 import {
   createImage,
@@ -8,8 +8,10 @@ import {
   decodeEntryData,
   deleteImage,
   entryDataToRecords,
+  getEntriesBySetId,
   getImagesByEntryId,
   getImagesByEntryIdAndTemplateNames,
+  getOrphanImagesBySetId,
   getProfileByUserId,
   getTemplateByName,
   linkImageToEntry,
@@ -22,6 +24,7 @@ import {
   type TriggerAction,
 } from "@repo/db";
 import { logger } from "@repo/logger";
+import { imagePathToDataUrl } from "./imageDataUrls.ts";
 
 interface TriggerContext {
   userId: number;
@@ -43,27 +46,13 @@ interface TriggerResult {
   missing: string[];
 }
 
-const MIME_TYPES: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml",
-};
-
-function mimeTypeForImage(relativePath: string): string {
-  const ext = relativePath.split(".").pop()?.toLowerCase() || "png";
-  return MIME_TYPES[ext] ?? "image/png";
-}
-
 /**
  * Build a TemplateGenerationInput record from an entry's data.
  * Every declared field with a string-coercible value flows through as a record.
  *
  * Any value that points to a stored set-image (e.g. "set-images/1/2/photo.png")
- * is replaced with a base64 data URL so Puppeteer can render it without
- * relying on a live static server.
+ * or profile logo is replaced with a base64 data URL so Puppeteer can render it
+ * without relying on a live static server.
  *
  * NOTE: the existing TemplateGenerationInput interface in @repo/generation
  * misspells the width field as `withdpx`. We map the trigger action's widthPx
@@ -86,31 +75,14 @@ async function buildGenerationInput(
   }
 
   for (const [key, value] of Object.entries(records)) {
-    if (typeof value === "string" && isSetImagePath(value)) {
-      try {
-        const buffer = await getSetImage(value);
-        if (buffer) {
-          const mime = mimeTypeForImage(value);
-          records[key] = `data:${mime};base64,${buffer.toString("base64")}`;
-        }
-      } catch (error) {
-        // Soft-fail: keep the original relative path if the file is missing
-        // or unreadable; the template will show a broken image instead of
-        // blocking the whole render.
-      }
-    }
-    if (typeof value === "string" && isProfileLogoPath(value)) {
-      try {
-        const buffer = await getProfileLogo(value);
-        if (buffer) {
-          const mime = mimeTypeForImage(value);
-          records[key] = `data:${mime};base64,${buffer.toString("base64")}`;
-        }
-      } catch (error) {
-        // Soft-fail: keep the original relative path if the file is missing
-        // or unreadable; the template will show a broken image instead of
-        // blocking the whole render.
-      }
+    if (typeof value !== "string") continue;
+    try {
+      const dataUrl = await imagePathToDataUrl(value);
+      if (dataUrl) records[key] = dataUrl;
+    } catch (error) {
+      // Soft-fail: keep the original relative path if the file is missing
+      // or unreadable; the template will show a broken image instead of
+      // blocking the whole render.
     }
   }
 
@@ -304,4 +276,27 @@ export function unusedTemplatesForSet(set: Set): string[] {
     ...tr.modify.map((a) => a.template),
   ]);
   return t.filter((name) => !used.has(name));
+}
+
+/**
+ * Delete every generated image and set-image directory owned by a set.
+ * Mirrors the per-entry "remove" cleanup for every entry in the set, and also
+ * drops orphaned image rows that reference the set via generationData but are
+ * not linked to any entry. Call BEFORE deleting the set's entries.
+ */
+export async function cleanupSetImages(
+  set: Set,
+): Promise<{ deleted: string[] }> {
+  const deleted: string[] = [];
+  const entries = await getEntriesBySetId(set.id);
+  for (const entry of entries) {
+    const linked = await getImagesByEntryId(entry.id);
+    deleted.push(...linked.map((img) => img.name));
+    await deleteImagesRowAndBlob(linked);
+    await deleteSetImageDirectory(set.id, entry.id);
+  }
+  const orphans = await getOrphanImagesBySetId(set.userId, set.id);
+  deleted.push(...orphans.map((img) => img.name));
+  await deleteImagesRowAndBlob(orphans);
+  return { deleted };
 }

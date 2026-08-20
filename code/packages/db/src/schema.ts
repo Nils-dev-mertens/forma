@@ -142,6 +142,9 @@ export const aiLogs = sqliteTable('ai_logs', {
   system: text('system'), // system prompt sent to the provider
   prompt: text('prompt'), // user prompt sent to the provider
   response: text('response'), // raw provider response
+  inputTokens: integer('input_tokens'), // tokens in the prompt
+  outputTokens: integer('output_tokens'), // tokens in the completion
+  totalTokens: integer('total_tokens'), // input + output
   status: text('status').notNull().default('success'), // 'success' | 'error'
   error: text('error'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),

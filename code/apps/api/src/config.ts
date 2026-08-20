@@ -11,6 +11,9 @@ export const origin =
 
 export const aiEncryptionKey : string | undefined = process.env.AI_ENCRYPTION_KEY;
 export const aiDefaultModel : string = process.env.AI_DEFAULT_MODEL ?? "gpt-4o-mini";
+// Per-user rolling 24h token budget for AI usage. Set to 0 to disable.
+export const aiDailyTokenLimit : number =
+  process.env.AI_DAILY_TOKEN_LIMIT != undefined ? Number(process.env.AI_DAILY_TOKEN_LIMIT) : 200_000;
 
 export const maxImageBytes : number =
   process.env.MAX_IMAGE_BYTES != undefined ? Number(process.env.MAX_IMAGE_BYTES) : 10 * 1024 * 1024;

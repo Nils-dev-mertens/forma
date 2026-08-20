@@ -281,6 +281,9 @@ export async function initializeDatabase() {
         system TEXT,
         prompt TEXT,
         response TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
         status TEXT NOT NULL DEFAULT 'success',
         error TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -288,6 +291,25 @@ export async function initializeDatabase() {
         FOREIGN KEY (session_id) REFERENCES ai_sessions(id) ON DELETE SET NULL
       );
     `);
+
+    // Migrate: add token usage columns to existing ai_logs tables.
+    try {
+      const existingLogColumns = sqlite
+        .query("PRAGMA table_info(ai_logs)")
+        .all() as Array<{ name: string }>;
+      const columnNames = new Set(existingLogColumns.map((c) => c.name));
+      if (!columnNames.has("total_tokens")) {
+        db.run(`ALTER TABLE ai_logs ADD COLUMN total_tokens INTEGER;`);
+      }
+      if (!columnNames.has("input_tokens")) {
+        db.run(`ALTER TABLE ai_logs ADD COLUMN input_tokens INTEGER;`);
+      }
+      if (!columnNames.has("output_tokens")) {
+        db.run(`ALTER TABLE ai_logs ADD COLUMN output_tokens INTEGER;`);
+      }
+    } catch (error) {
+      console.warn("Could not migrate ai_logs token columns:", error);
+    }
 
     db.run(`CREATE INDEX IF NOT EXISTS ai_logs_user_id_idx ON ai_logs(user_id);`);
 

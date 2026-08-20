@@ -69,6 +69,31 @@ export async function getImagesByEntryId(entryId: number): Promise<Image[]> {
     .orderBy(images.createdAt);
 }
 
+// Get images that reference a set but are not linked to any entry. These are
+// orphans left behind when a render's DB row was created but the entry link
+// step failed (or legacy images predate entry linking). Parsing generationData
+// in JS keeps this portable instead of relying on SQLite's json_extract.
+export async function getOrphanImagesBySetId(
+  userId: number,
+  setId: number,
+): Promise<Image[]> {
+  const all = await getImagesByUserId(userId);
+  return all.filter((img) => {
+    if (img.entryId !== null) return false;
+    if (!img.generationData) return false;
+    try {
+      const data = JSON.parse(img.generationData);
+      return (
+        data !== null &&
+        typeof data === "object" &&
+        (data as Record<string, unknown>).setId === setId
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 // Get an entry's images filtered to a specific list of template names owned
 // by a user. Resolves names -> template ids in one query, then joins by
 // images.templateId so we never have to parse generationData JSON.

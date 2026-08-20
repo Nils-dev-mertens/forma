@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, type LanguageModel } from "ai";
+import { generateText, type LanguageModel, type ModelMessage } from "ai";
 import { getAiKeyByUserId } from "@repo/db";
 import { decrypt } from "../../utils/crypto.ts";
 import { aiDefaultModel } from "../../config.ts";
@@ -25,7 +25,22 @@ export interface GenerateOptions {
   userId: number;
   system: string;
   messages: AiMessage[];
-}function getModel(provider: SupportedProvider, apiKey: string): LanguageModel {
+}
+
+/**
+ * Convert the local AiMessage shape to the AI SDK's ModelMessage type.
+ * ai v7 renamed CoreMessage to ModelMessage and no longer exports it; mapping
+ * roles to literals keeps the array fully typed.
+ */
+function toModelMessages(messages: AiMessage[]): ModelMessage[] {
+  return messages.map((m) =>
+    m.role === "user"
+      ? { role: "user", content: m.content }
+      : { role: "assistant", content: m.content },
+  );
+}
+
+function getModel(provider: SupportedProvider, apiKey: string): LanguageModel {
   const factory = PROVIDERS[provider];
   if (!factory) {
     throw new Error(`Unsupported AI provider: ${provider}`);
@@ -49,35 +64,55 @@ export async function getModelForUser(userId: number): Promise<LanguageModel> {
   return getModel(provider, apiKey);
 }
 
-/**
- * Generate a text response from the configured provider using the given system
- * prompt and chat messages.
- */
-export async function generateFromProvider(
-  options: GenerateOptions,
-): Promise<string> {
-  const model = await getModelForUser(options.userId);
-  const { text } = await generateText({
-    model,
-    system: options.system,
-    // ai v7 does not export a CoreMessage type, so we cast the local shape.
-    messages: options.messages as any,
-  });
-  return text;
+export interface GenerationResult {
+  text: string;
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  totalTokens: number | undefined;
 }
 
 /**
- * Validate that a raw API key works with the given provider by making a tiny
- * test call. Throws if the provider rejects it.
+ * Generate a text response from the configured provider using the given system
+ * prompt and chat messages. Returns the text plus token usage so callers can
+ * enforce budgets and log costs.
+ */
+export async function generateFromProvider(
+  options: GenerateOptions,
+): Promise<GenerationResult> {
+  const model = await getModelForUser(options.userId);
+  const { text, usage } = await generateText({
+    model,
+    system: options.system,
+    messages: toModelMessages(options.messages),
+  });
+  return {
+    text,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+    totalTokens: usage?.totalTokens,
+  };
+}
+
+/**
+ * Validate that a raw API key works with the given provider WITHOUT making a
+ * billable generation call. OpenAI's `GET /v1/models` is free and rejects
+ * invalid keys with a 401, so we hit that endpoint instead of generateText().
+ * Throws if the provider rejects the key.
  */
 export async function validateRawAiKey(provider: SupportedProvider, apiKey: string): Promise<void> {
-  const model = getModel(provider, apiKey);
-  await generateText({
-    model,
-    system: "Reply with the single word OK.",
-    // ai v7 does not export a CoreMessage type, so we cast the local shape.
-    messages: [{ role: "user", content: "OK?" } as any],
+  if (provider !== "openai") {
+    throw new Error(`Unsupported AI provider: ${provider}`);
+  }
+  const res = await fetch("https://api.openai.com/v1/models", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    signal: AbortSignal.timeout(10_000),
   });
+  if (!res.ok) {
+    throw new Error(`AI provider rejected the API key (HTTP ${res.status})`);
+  }
 }
 
 

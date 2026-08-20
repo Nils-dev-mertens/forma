@@ -29,13 +29,21 @@ import {
   type SetTriggers,
   type TriggerAction,
 } from "@repo/db";
-import { fireTriggers, unusedTemplatesForSet } from "../../services/setTriggers.ts";
+import { fireTriggers, cleanupSetImages, unusedTemplatesForSet } from "../../services/setTriggers.ts";
 import { getTemplateFields } from "@repo/generation";
 import { getTemplate, saveSetImage, deleteSetImage } from "@repo/storage";
 import { imageSize } from "image-size";
 import { maxImageBytes, maxImageDimension, maxUploadFiles } from "../../config.ts";
 
-const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
+const ALLOWED_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  "image/avif",
+];
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -506,7 +514,7 @@ router.patch("/:setId", async (req, res) => {
  * /api/set/{setId}:
  *   delete:
  *     summary: Delete a set
- *     description: Delete a set and all of its entries. Linked generated images are NOT automatically deleted.
+ *     description: Delete a set, all of its entries, and every linked generated image plus the set's uploaded image folders.
  *     tags: [Sets]
  *     security:
  *       - apiKey: []
@@ -529,9 +537,10 @@ router.delete("/:setId", async (req, res) => {
     const own = await assertOwnership(userId, setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
+    const { deleted } = await cleanupSetImages(own.set);
     await deleteEntriesBySetId(setId);
     await deleteSet(setId);
-    return res.json({ success: true });
+    return res.json({ success: true, deleted });
   } catch (error) {
     logger.error({ message: "Failed to delete set", error: error as Error });
     return res.status(500).json({ error: "Failed to delete set" });
@@ -969,18 +978,21 @@ router.post(
       for (const file of files) {
         if (!imageFields.has(file.fieldname)) continue;
 
+        // SVG is vector and scalable; dimension limits do not apply.
+        const isSvg = file.mimetype === "image/svg+xml";
         const dimensions = imageDimensions(file.buffer);
-        if (!dimensions?.width || !dimensions?.height) {
+        if (!isSvg && (!dimensions?.width || !dimensions?.height)) {
           return res.status(400).json({
             error: `Unable to read image dimensions for field "${file.fieldname}". The file may be corrupted or in an unsupported format.`,
           });
         }
         if (
-          dimensions.width > maxImageDimension ||
-          dimensions.height > maxImageDimension
+          !isSvg &&
+          (dimensions!.width > maxImageDimension ||
+            dimensions!.height > maxImageDimension)
         ) {
           return res.status(413).json({
-            error: `Image for field "${file.fieldname}" is ${dimensions.width}x${dimensions.height}. Maximum allowed is ${maxImageDimension}x${maxImageDimension} pixels.`,
+            error: `Image for field "${file.fieldname}" is ${dimensions!.width}x${dimensions!.height}. Maximum allowed is ${maxImageDimension}x${maxImageDimension} pixels.`,
           });
         }
 
