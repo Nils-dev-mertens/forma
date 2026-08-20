@@ -1,6 +1,7 @@
 /testdata/
 */local-blob-storage/*
 .opencode/
+.flowlane
 opencode.json
 AGENTS.md
 
