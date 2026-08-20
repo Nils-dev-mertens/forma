@@ -1,13 +1,8 @@
-import { type ApiKey } from "@repo/auth";
 import { db } from "./client.ts";
 import { apiKeys } from "./schema.ts";
 import { eq } from "drizzle-orm";
 
-// Interface for the API key data structure used in database operations
-interface ApiKeyData {
-  key: string;
-  userId: number;
-}
+export type ApiKey = `key-${string}`;
 
 export async function storeKeyHash(key: ApiKey, bcryptHash: string) {
   // For now, we'll use a default userId since the auth ApiKey type doesn't include it

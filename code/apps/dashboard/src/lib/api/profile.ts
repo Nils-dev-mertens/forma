@@ -2,8 +2,7 @@ import { apiFetch } from "./core";
 
 export interface Profile {
   displayName: string | null;
-  title: string | null;
-  company: string | null;
+  tagline: string | null;
   brandColors: Record<string, string>;
   logo: string | null;
   socialLinks: Record<string, string>;
@@ -23,8 +22,7 @@ export interface UserWithProfile {
 
 export interface ProfileUpdatePayload {
   displayName?: string;
-  title?: string;
-  company?: string;
+  tagline?: string;
   brandColors?: Record<string, string | undefined>;
   socialLinks?: Record<string, string | undefined>;
   customData?: Record<string, unknown>;

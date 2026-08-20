@@ -69,8 +69,8 @@ function LoginPage() {
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={isLoading || authLoading}>
-              {isLoading || authLoading ? "Logging in..." : "Log in"}
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Log in"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
               Don&apos;t have an account?{" "}

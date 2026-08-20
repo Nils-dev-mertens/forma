@@ -112,6 +112,10 @@ describe("Set template field coverage validation", () => {
 
 describe("Entry image field upload", () => {
   const templateName = `image-upload-test-${Date.now()}.html`;
+  const onePixelPng = Buffer.from(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000000020001e221bc330000000049454e44ae426082",
+    "hex",
+  );
 
   beforeAll(async () => {
     const html = "<h1>{{ name }}</h1><img src=\"{{ profilephoto }}\">";
@@ -143,10 +147,39 @@ describe("Entry image field upload", () => {
 
     const uploadRes = await request(app)
       .post(`/api/set/${setId}/entry/${entryId}/images`)
-      .attach("profilephoto", Buffer.from("fake-image-data"), "profilephoto.png");
+      .attach("profilephoto", onePixelPng, "profilephoto.png");
 
     expect(uploadRes.status).toBe(200);
     expect(uploadRes.body.success).toBe(true);
     expect(uploadRes.body.entry.data.profilephoto).toMatch(/^set-images\//);
+  }, 10000);
+
+  test("rejects a file whose dimensions cannot be read", async () => {
+    const setRes = await request(app)
+      .post("/api/set")
+      .send({
+        name: `bad-image-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string" },
+          { fieldname: "profilephoto", type: "image" },
+        ],
+        templates: [templateName],
+        triggers: { add: [], modify: [] },
+      });
+    expect(setRes.status).toBe(201);
+    const setId = setRes.body.set.id;
+
+    const entryRes = await request(app)
+      .post(`/api/set/${setId}/entry`)
+      .send({ data: { name: "Ada", profilephoto: "" } });
+    expect(entryRes.status).toBe(201);
+    const entryId = entryRes.body.entry.id;
+
+    const uploadRes = await request(app)
+      .post(`/api/set/${setId}/entry/${entryId}/images`)
+      .attach("profilephoto", Buffer.from("fake-image-data"), "profilephoto.png");
+
+    expect(uploadRes.status).toBe(400);
+    expect(uploadRes.body.error).toContain("Unable to read image dimensions");
   }, 10000);
 });

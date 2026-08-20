@@ -1,5 +1,8 @@
 /testdata/
 */local-blob-storage/*
+.opencode/
+opencode.json
+AGENTS.md
 
 # AI progress notes and local docs
 code/docs/ai/

@@ -17,7 +17,7 @@ export async function createImage(userId: number, templateId: number | null, nam
 }
 
 // Get an image by name for a specific user
-export async function getImageByName(userId: number, name: string): Promise<Image | null> {
+export async function getImageByName(_userId: number, name: string): Promise<Image | null> {
   const result = await db
     .select()
     .from(images)

@@ -17,8 +17,7 @@ export const profiles = sqliteTable('profiles', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
   displayName: text('display_name'),
-  title: text('title'),
-  company: text('company'),
+  tagline: text('tagline'),
   brandColors: text('brand_colors').notNull(),
   logo: text('logo'),
   socialLinks: text('social_links').notNull(),
@@ -133,6 +132,21 @@ export const aiMessages = sqliteTable('ai_messages', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
+// AI response log table - audit trail of provider calls (request + response).
+export const aiLogs = sqliteTable('ai_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: integer('session_id').references(() => aiSessions.id, { onDelete: 'set null' }),
+  provider: text('provider').notNull().default('openai'),
+  model: text('model').notNull().default(''),
+  system: text('system'), // system prompt sent to the provider
+  prompt: text('prompt'), // user prompt sent to the provider
+  response: text('response'), // raw provider response
+  status: text('status').notNull().default('success'), // 'success' | 'error'
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   apiKeys: many(apiKeys),
@@ -228,6 +242,17 @@ export const aiMessagesRelations = relations(aiMessages, ({ one }) => ({
   }),
 }));
 
+export const aiLogsRelations = relations(aiLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [aiLogs.userId],
+    references: [users.id],
+  }),
+  session: one(aiSessions, {
+    fields: [aiLogs.sessionId],
+    references: [aiSessions.id],
+  }),
+}));
+
 // Types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -251,3 +276,5 @@ export type AiSession = typeof aiSessions.$inferSelect;
 export type NewAiSession = typeof aiSessions.$inferInsert;
 export type AiMessage = typeof aiMessages.$inferSelect;
 export type NewAiMessage = typeof aiMessages.$inferInsert;
+export type AiLog = typeof aiLogs.$inferSelect;
+export type NewAiLog = typeof aiLogs.$inferInsert;

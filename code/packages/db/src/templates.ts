@@ -17,7 +17,7 @@ export async function createTemplate(userId: number, name: string, content: stri
 }
 
 // Get a template by name for a specific user
-export async function getTemplateByName(userId: number, name: string): Promise<Template | null> {
+export async function getTemplateByName(_userId: number, name: string): Promise<Template | null> {
   const result = await db
     .select()
     .from(templates)

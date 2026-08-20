@@ -52,8 +52,7 @@ function ProfilePage() {
   });
 
   const [displayName, setDisplayName] = useState("");
-  const [title, setTitle] = useState("");
-  const [company, setCompany] = useState("");
+  const [tagline, setTagline] = useState("");
   const [website, setWebsite] = useState("");
   const [linkedin, setLinkedin] = useState("");
   const [twitter, setTwitter] = useState("");
@@ -72,8 +71,7 @@ function ProfilePage() {
     if (!hasSeeded && data?.user.profile) {
       const profile = data.user.profile;
       setDisplayName(profile.displayName ?? "");
-      setTitle(profile.title ?? "");
-      setCompany(profile.company ?? "");
+      setTagline(profile.tagline ?? "");
       setWebsite(profile.socialLinks?.website ?? "");
       setLinkedin(profile.socialLinks?.linkedin ?? "");
       setTwitter(profile.socialLinks?.twitter ?? "");
@@ -145,8 +143,7 @@ function ProfilePage() {
 
       return updateProfile(userId, {
         displayName: displayName.trim() || undefined,
-        title: title.trim() || undefined,
-        company: company.trim() || undefined,
+        tagline: tagline.trim() || undefined,
         brandColors: brandColorsRecord,
         socialLinks,
         customData,
@@ -250,14 +247,14 @@ function ProfilePage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
         <p className="text-sm text-muted-foreground">
-          Manage your identity, brand palette, and social links.
+          Manage your company identity, brand palette, and social links.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Identity</CardTitle>
-          <CardDescription>How you appear across the platform.</CardDescription>
+          <CardTitle>Brand identity</CardTitle>
+          <CardDescription>How your company appears across the platform.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
@@ -275,26 +272,14 @@ function ProfilePage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="title" className="text-sm font-medium">
-                  Title
+                <label htmlFor="tagline" className="text-sm font-medium">
+                  Tagline
                 </label>
                 <input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Product Designer"
-                  className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <label htmlFor="company" className="text-sm font-medium">
-                  Company
-                </label>
-                <input
-                  id="company"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Acme Inc."
+                  id="tagline"
+                  value={tagline}
+                  onChange={(e) => setTagline(e.target.value)}
+                  placeholder="Branding for modern teams"
                   className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>

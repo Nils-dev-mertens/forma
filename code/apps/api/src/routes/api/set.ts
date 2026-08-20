@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router, type Response, type Request, type NextFunction } from "express";
 import { logger } from "@repo/logger";
 import multer from "multer";
 import {
@@ -32,11 +32,17 @@ import {
 import { fireTriggers, unusedTemplatesForSet } from "../../services/setTriggers.ts";
 import { getTemplateFields } from "@repo/generation";
 import { getTemplate, saveSetImage, deleteSetImage } from "@repo/storage";
+import { imageSize } from "image-size";
+import { maxImageBytes, maxImageDimension, maxUploadFiles } from "../../config.ts";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
 
 const upload = multer({
   storage: multer.memoryStorage(),
+  limits: {
+    fileSize: maxImageBytes,
+    files: maxUploadFiles,
+  },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
       cb(null, true);
@@ -45,6 +51,37 @@ const upload = multer({
     }
   },
 });
+
+// Run multer and translate errors into JSON responses.
+function uploadImages(req: Request, res: Response, next: NextFunction) {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          error: `File too large. Maximum size is ${Math.round(maxImageBytes / (1024 * 1024))} MB.`,
+        });
+      }
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_COUNT") {
+        return res.status(413).json({
+          error: `Too many files. Maximum is ${maxUploadFiles} files per request.`,
+        });
+      }
+      return res.status(400).json({
+        error: err instanceof Error ? err.message : "Upload failed",
+      });
+    }
+    next();
+  });
+}
+
+// Read image dimensions from a buffer without loading it into memory.
+function imageDimensions(buffer: Buffer): ReturnType<typeof imageSize> | undefined {
+  try {
+    return imageSize(buffer);
+  } catch {
+    return undefined;
+  }
+}
 
 const router: Router = Router();
 
@@ -895,7 +932,7 @@ router.delete("/:setId/entry/:entryId", async (req, res) => {
  */
 router.post(
   "/:setId/entry/:entryId/images",
-  upload.any(),
+  uploadImages,
   async (req, res) => {
     try {
       const userId = requireUserId(res);
@@ -931,6 +968,22 @@ router.post(
 
       for (const file of files) {
         if (!imageFields.has(file.fieldname)) continue;
+
+        const dimensions = imageDimensions(file.buffer);
+        if (!dimensions?.width || !dimensions?.height) {
+          return res.status(400).json({
+            error: `Unable to read image dimensions for field "${file.fieldname}". The file may be corrupted or in an unsupported format.`,
+          });
+        }
+        if (
+          dimensions.width > maxImageDimension ||
+          dimensions.height > maxImageDimension
+        ) {
+          return res.status(413).json({
+            error: `Image for field "${file.fieldname}" is ${dimensions.width}x${dimensions.height}. Maximum allowed is ${maxImageDimension}x${maxImageDimension} pixels.`,
+          });
+        }
+
         const oldPath = data[file.fieldname];
         if (typeof oldPath === "string" && oldPath.startsWith("set-images/")) {
           replaced.push(oldPath);

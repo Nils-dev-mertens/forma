@@ -1,6 +1,7 @@
 import { CheckKey } from "@repo/auth";
 import { logger } from "@repo/logger";
 import {Router, type RequestHandler} from "express"
+import { nodeEnv } from "../../config.ts";
 import templateroute from "./template"
 import imageGenerationRoute from "./generation/image"
 import keyRoute from "./key"
@@ -32,7 +33,7 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
     // when they are provided. This lets Swagger with an API key work while
     // keeping the convenience of keyless local testing.
     if (!rawKey) {
-        if (process.env.NODE_ENV === "development") {
+        if (nodeEnv === "development") {
             res.locals.user = {
                 id: 1,
                 keyId: null,
@@ -148,7 +149,7 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
     next();
 };
 
-if (process.env.NODE_ENV != "development") {
+if (nodeEnv != "development") {
     logger.info({ message: "Api route is using key protection" });
 }
 

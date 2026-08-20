@@ -7,6 +7,7 @@ import {
   getUserByEmail,
   createUser,
   getProfileByUserId,
+  getProfilesByUserIds,
   updateProfile,
   type User,
   type Profile,
@@ -16,6 +17,7 @@ import {
 } from "@repo/db"
 import { hashPassword } from "@repo/auth"
 import { saveProfileLogo, deleteProfileLogo } from "@repo/storage"
+import { maxImageBytes, nodeEnv } from "../../config"
 import multer from "multer"
 
 const router: Router = Router()
@@ -30,6 +32,7 @@ const ALLOWED_IMAGE_TYPES = [
 
 const upload = multer({
   storage: multer.memoryStorage(),
+  limits: { fileSize: maxImageBytes },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
       cb(null, true)
@@ -46,8 +49,7 @@ function formatProfile(profile: Profile | null) {
   if (!profile) return null
   return {
     displayName: profile.displayName,
-    title: profile.title,
-    company: profile.company,
+    tagline: profile.tagline,
     brandColors: decodeProfileBrandColors(profile),
     logo: profile.logo,
     socialLinks: decodeProfileSocialLinks(profile),
@@ -70,6 +72,68 @@ async function formatUserWithProfile(user: User) {
     updatedAt: user.updatedAt,
     profile: formatProfile(profile),
   }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isJsonSafe(value: unknown, depth = 0): boolean {
+  if (depth > 10) return false
+  if (value === null) return true
+  const type = typeof value
+  if (type === "string" || type === "number" || type === "boolean") return true
+  if (Array.isArray(value)) {
+    return value.every((item) => isJsonSafe(item, depth + 1))
+  }
+  if (type === "object") {
+    return Object.values(value as Record<string, unknown>).every((item) =>
+      isJsonSafe(item, depth + 1),
+    )
+  }
+  return false
+}
+
+function validateStringField(
+  name: string,
+  value: unknown,
+): { ok: boolean; error?: string } {
+  if (typeof value !== "string") {
+    return { ok: false, error: `${name} must be a string` }
+  }
+  return { ok: true }
+}
+
+function validateStringMap(
+  name: string,
+  value: unknown,
+): { ok: boolean; error?: string } {
+  if (!isPlainObject(value)) {
+    return { ok: false, error: `${name} must be an object` }
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== "string") {
+      return { ok: false, error: `${name}.${key} must be a string` }
+    }
+  }
+  return { ok: true }
+}
+
+function validateCustomDataShape(
+  value: unknown,
+): { ok: boolean; error?: string } {
+  if (!isPlainObject(value)) {
+    return { ok: false, error: "customData must be an object" }
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (!isJsonSafe(entry)) {
+      return {
+        ok: false,
+        error: `customData.${key} must be JSON-serializable (string, number, boolean, null, or nested objects/arrays)`,
+      }
+    }
+  }
+  return { ok: true }
 }
 
 /**
@@ -119,8 +183,7 @@ async function formatUserWithProfile(user: User) {
  *                         nullable: true
  *                         properties:
  *                           displayName: { type: string, nullable: true }
- *                           title: { type: string, nullable: true }
- *                           company: { type: string, nullable: true }
+ *                           tagline: { type: string, nullable: true }
  *                           brandColors: { type: object }
  *                           logo: { type: string, nullable: true }
  *                           socialLinks: { type: object }
@@ -138,16 +201,22 @@ async function formatUserWithProfile(user: User) {
 router.get("/", async (req, res) => {
   try {
     // In a real implementation, this would require proper authentication
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Listing users requires authentication in production"
       })
     }
 
     const allUsers = await getAllUsers()
-    const usersWithProfile = await Promise.all(
-      allUsers.map((user) => formatUserWithProfile(user))
-    )
+    const profilesById = await getProfilesByUserIds(allUsers.map((user) => user.id))
+    const usersWithProfile = allUsers.map((user) => ({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      profile: formatProfile(profilesById.get(user.id) ?? null),
+    }))
 
     return res.json({
       success: true,
@@ -218,8 +287,7 @@ router.get("/", async (req, res) => {
  *                       nullable: true
  *                       properties:
  *                         displayName: { type: string, nullable: true }
- *                         title: { type: string, nullable: true }
- *                         company: { type: string, nullable: true }
+ *                         tagline: { type: string, nullable: true }
  *                         brandColors: { type: object }
  *                         logo: { type: string, nullable: true }
  *                         socialLinks: { type: object }
@@ -246,7 +314,7 @@ router.get("/:userId", async (req, res) => {
     }
 
     // In a real implementation, this would require proper authentication
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Viewing user information requires authentication in production"
       })
@@ -343,8 +411,7 @@ router.get("/:userId", async (req, res) => {
  *                       nullable: true
  *                       properties:
  *                         displayName: { type: string, nullable: true }
- *                         title: { type: string, nullable: true }
- *                         company: { type: string, nullable: true }
+ *                         tagline: { type: string, nullable: true }
  *                         brandColors: { type: object }
  *                         logo: { type: string, nullable: true }
  *                         socialLinks: { type: object }
@@ -384,7 +451,7 @@ router.post("/", async (req, res) => {
     }
 
     // In a real implementation, this would require proper authentication
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Creating users requires authentication in production"
       })
@@ -465,9 +532,7 @@ router.post("/", async (req, res) => {
  *             properties:
  *               displayName:
  *                 type: string
- *               title:
- *                 type: string
- *               company:
+ *               tagline:
  *                 type: string
  *               brandColors:
  *                 type: object
@@ -497,8 +562,7 @@ router.post("/", async (req, res) => {
  *                       nullable: true
  *                       properties:
  *                         displayName: { type: string, nullable: true }
- *                         title: { type: string, nullable: true }
- *                         company: { type: string, nullable: true }
+ *                         tagline: { type: string, nullable: true }
  *                         brandColors: { type: object }
  *                         logo: { type: string, nullable: true }
  *                         socialLinks: { type: object }
@@ -518,7 +582,7 @@ router.patch("/:userId/profile", async (req, res) => {
       return res.status(400).json({ error: "Invalid user ID" })
     }
 
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Updating profiles requires authentication in production",
       })
@@ -529,13 +593,33 @@ router.patch("/:userId/profile", async (req, res) => {
       return res.status(404).json({ error: "User not found" })
     }
 
-    const { displayName, title, company, brandColors, socialLinks, customData } =
+    const { displayName, tagline, brandColors, socialLinks, customData } =
       req.body ?? {}
+
+    if (displayName !== undefined) {
+      const check = validateStringField("displayName", displayName)
+      if (!check.ok) return res.status(400).json({ error: check.error })
+    }
+    if (tagline !== undefined) {
+      const check = validateStringField("tagline", tagline)
+      if (!check.ok) return res.status(400).json({ error: check.error })
+    }
+    if (brandColors !== undefined) {
+      const check = validateStringMap("brandColors", brandColors)
+      if (!check.ok) return res.status(400).json({ error: check.error })
+    }
+    if (socialLinks !== undefined) {
+      const check = validateStringMap("socialLinks", socialLinks)
+      if (!check.ok) return res.status(400).json({ error: check.error })
+    }
+    if (customData !== undefined) {
+      const check = validateCustomDataShape(customData)
+      if (!check.ok) return res.status(400).json({ error: check.error })
+    }
 
     const updates: Parameters<typeof updateProfile>[1] = {}
     if (displayName !== undefined) updates.displayName = displayName
-    if (title !== undefined) updates.title = title
-    if (company !== undefined) updates.company = company
+    if (tagline !== undefined) updates.tagline = tagline
     if (brandColors !== undefined) updates.brandColors = brandColors
     if (socialLinks !== undefined) updates.socialLinks = socialLinks
     if (customData !== undefined) updates.customData = customData
@@ -608,8 +692,7 @@ router.patch("/:userId/profile", async (req, res) => {
  *                       nullable: true
  *                       properties:
  *                         displayName: { type: string, nullable: true }
- *                         title: { type: string, nullable: true }
- *                         company: { type: string, nullable: true }
+ *                         tagline: { type: string, nullable: true }
  *                         brandColors: { type: object }
  *                         logo: { type: string, nullable: true }
  *                         socialLinks: { type: object }
@@ -636,7 +719,7 @@ router.post(
         return res.status(400).json({ error: "Invalid user ID" })
       }
 
-      if (process.env.NODE_ENV !== "development") {
+      if (nodeEnv !== "development") {
         return res.status(403).json({
           error: "Uploading logos requires authentication in production",
         })

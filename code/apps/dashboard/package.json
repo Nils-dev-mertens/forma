@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --bun vite dev --port 3000",
+    "dev": "bun --bun vite dev --host --port 3000",
     "build": "bun --bun vite build",
     "preview": "bun --bun vite preview",
     "test": "vitest run",

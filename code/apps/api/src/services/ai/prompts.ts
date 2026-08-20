@@ -10,8 +10,7 @@ const ALLOWED_PROMPTS = ["template"];
 
 export interface ProfileContext {
   displayName: string;
-  title: string;
-  company: string;
+  tagline: string;
   brandColors: string;
   socialLinks: string;
   customData: string;
@@ -23,8 +22,7 @@ export async function buildProfileContext(userId: number): Promise<ProfileContex
   if (!profile) {
     return {
       displayName: "",
-      title: "",
-      company: "",
+      tagline: "",
       brandColors: "{}",
       socialLinks: "{}",
       customData: "{}",
@@ -36,8 +34,7 @@ export async function buildProfileContext(userId: number): Promise<ProfileContex
 
   return {
     displayName: profile.displayName ?? records["profile.displayName"] ?? "",
-    title: profile.title ?? records["profile.title"] ?? "",
-    company: profile.company ?? records["profile.company"] ?? "",
+    tagline: profile.tagline ?? records["profile.tagline"] ?? "",
     brandColors: profile.brandColors ?? "{}",
     socialLinks: profile.socialLinks ?? "{}",
     customData: profile.customData ?? "{}",
@@ -45,15 +42,27 @@ export async function buildProfileContext(userId: number): Promise<ProfileContex
   };
 }
 
-function replacePlaceholders(template: string, context: ProfileContext): string {
-  return template
-    .replace(/{{profile\.displayName}}/g, context.displayName)
-    .replace(/{{profile\.title}}/g, context.title)
-    .replace(/{{profile\.company}}/g, context.company)
-    .replace(/{{profile\.brandColors}}/g, context.brandColors)
-    .replace(/{{profile\.socialLinks}}/g, context.socialLinks)
-    .replace(/{{profile\.customData}}/g, context.customData)
-    .replace(/{{profile\.logo}}/g, context.logo);
+function buildBrandContextBlock(context: ProfileContext): string {
+  const lines: string[] = [];
+  if (context.displayName.trim() !== "") {
+    lines.push(`- Display name: ${context.displayName.trim()}`);
+  }
+  if (context.tagline.trim() !== "") {
+    lines.push(`- Tagline: ${context.tagline.trim()}`);
+  }
+  if (context.brandColors.trim() !== "" && context.brandColors.trim() !== "{}") {
+    lines.push(`- Brand colors: ${context.brandColors.trim()}`);
+  }
+  if (context.socialLinks.trim() !== "" && context.socialLinks.trim() !== "{}") {
+    lines.push(`- Social links: ${context.socialLinks.trim()}`);
+  }
+  if (context.customData.trim() !== "" && context.customData.trim() !== "{}") {
+    lines.push(`- Custom data: ${context.customData.trim()}`);
+  }
+  if (context.logo.trim() !== "") {
+    lines.push(`- Logo: ${context.logo.trim()}`);
+  }
+  return lines.join("\n");
 }
 
 export async function loadSystemPrompt(
@@ -66,5 +75,9 @@ export async function loadSystemPrompt(
   const path = join(__dirname, "..", "..", "prompts", `${name}.md`);
   const raw = await readFile(path, "utf-8");
   const context = await buildProfileContext(userId);
-  return replacePlaceholders(raw, context);
+  const brandContext = buildBrandContextBlock(context);
+  return raw.replace(
+    /{{brandContext}}/g,
+    brandContext || "No brand information has been set up yet — design a clean, generic template the user can customize later.",
+  );
 }

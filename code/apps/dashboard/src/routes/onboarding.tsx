@@ -10,8 +10,7 @@ function OnboardingPage() {
   const { finishOnboarding, user, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [displayName, setDisplayName] = useState("")
-  const [company, setCompany] = useState("")
-  const [title, setTitle] = useState("")
+  const [tagline, setTagline] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -32,8 +31,7 @@ function OnboardingPage() {
     try {
       await finishOnboarding({
         displayName: displayName.trim(),
-        company: company.trim(),
-        title: title.trim(),
+        tagline: tagline.trim(),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to complete onboarding")
@@ -46,50 +44,37 @@ function OnboardingPage() {
     <div className="flex min-h-svh items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Let&apos;s set up your profile</CardTitle>
+          <CardTitle className="text-2xl">Let&apos;s set up your brand profile</CardTitle>
           <CardDescription>
-            Tell us a little about yourself so we can personalize your experience.
+            Tell us about your company so templates can be on-brand from the start.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="displayName" className="text-sm font-medium">
-                Display name
+                Brand / company name
               </label>
               <input
                 id="displayName"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Jane Doe"
+                placeholder="Acme Inc."
                 className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 required
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="title" className="text-sm font-medium">
-                Title
+              <label htmlFor="tagline" className="text-sm font-medium">
+                Tagline
               </label>
               <input
-                id="title"
+                id="tagline"
                 type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Product Designer"
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="company" className="text-sm font-medium">
-                Company
-              </label>
-              <input
-                id="company"
-                type="text"
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="Acme Inc."
+                value={tagline}
+                onChange={(e) => setTagline(e.target.value)}
+                placeholder="Branding for modern teams"
                 className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>

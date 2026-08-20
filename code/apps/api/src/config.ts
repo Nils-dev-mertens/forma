@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const port : number = process.env.PORT != undefined ? Number(process.env.PORT) : 3001;
+export const nodeEnv : string = process.env.NODE_ENV ?? "development";
 export const origin =
     process.env.ORIGIN != undefined
         ? process.env.ORIGIN
@@ -10,6 +11,13 @@ export const origin =
 
 export const aiEncryptionKey : string | undefined = process.env.AI_ENCRYPTION_KEY;
 export const aiDefaultModel : string = process.env.AI_DEFAULT_MODEL ?? "gpt-4o-mini";
+
+export const maxImageBytes : number =
+  process.env.MAX_IMAGE_BYTES != undefined ? Number(process.env.MAX_IMAGE_BYTES) : 10 * 1024 * 1024;
+export const maxImageDimension : number =
+  process.env.MAX_IMAGE_DIMENSION != undefined ? Number(process.env.MAX_IMAGE_DIMENSION) : 8192;
+export const maxUploadFiles : number =
+  process.env.MAX_UPLOAD_FILES != undefined ? Number(process.env.MAX_UPLOAD_FILES) : 10;
 
 const swaggerDefinition = {
   openapi: '3.0.0',

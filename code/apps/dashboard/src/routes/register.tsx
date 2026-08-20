@@ -108,8 +108,8 @@ function RegisterPage() {
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={isLoading || authLoading}>
-              {isLoading || authLoading ? "Creating account..." : "Create account"}
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? "Creating account..." : "Create account"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
               Already have an account?{" "}

@@ -17,8 +17,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   finishOnboarding: (data: {
     displayName?: string;
-    company?: string;
-    title?: string;
+    tagline?: string;
   }) => Promise<void>;
 }
 
@@ -66,8 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const finishOnboarding = async (data: {
     displayName?: string;
-    company?: string;
-    title?: string;
+    tagline?: string;
   }) => {
     await completeOnboarding(data);
     setUser((prev) => (prev ? { ...prev, onboardingCompleted: true } : prev));

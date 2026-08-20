@@ -1,6 +1,6 @@
 import { db } from "./client.ts";
 import { profiles, type Profile, type NewProfile } from "./schema.ts";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 export interface ProfileBrandColors {
   [key: string]: string | undefined;
@@ -19,8 +19,7 @@ export interface ProfileCustomData {
 
 export interface ProfileData {
   displayName?: string | null;
-  title?: string | null;
-  company?: string | null;
+  tagline?: string | null;
   brandColors?: ProfileBrandColors;
   logo?: string | null;
   socialLinks?: ProfileSocialLinks;
@@ -37,8 +36,7 @@ export async function createProfile(userId: number): Promise<Profile> {
     .values({
       userId,
       displayName: null,
-      title: null,
-      company: null,
+      tagline: null,
       brandColors: JSON.stringify({}),
       logo: null,
       socialLinks: JSON.stringify({}),
@@ -66,6 +64,19 @@ export async function getProfileByUserId(userId: number): Promise<Profile | null
 }
 
 /**
+ * Fetch profiles for many users in a single query.
+ * Returns a map keyed by user ID for O(1) lookups.
+ */
+export async function getProfilesByUserIds(userIds: number[]): Promise<Map<number, Profile>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await db
+    .select()
+    .from(profiles)
+    .where(inArray(profiles.userId, userIds));
+  return new Map(rows.map((profile) => [profile.userId, profile]));
+}
+
+/**
  * Update a user's identity profile.
  * Pass null for logo to remove the logo reference (caller should delete the file).
  */
@@ -81,8 +92,7 @@ export async function updateProfile(
   };
 
   if (data.displayName !== undefined) set.displayName = data.displayName ?? null;
-  if (data.title !== undefined) set.title = data.title ?? null;
-  if (data.company !== undefined) set.company = data.company ?? null;
+  if (data.tagline !== undefined) set.tagline = data.tagline ?? null;
   if (data.logo !== undefined) set.logo = data.logo ?? null;
   if (data.brandColors !== undefined) {
     set.brandColors = JSON.stringify(data.brandColors ?? {});
@@ -162,8 +172,7 @@ export function profileToRecords(profile: Profile): Record<string, string> {
   const records: Record<string, string> = {};
 
   if (profile.displayName) records["profile.displayName"] = profile.displayName;
-  if (profile.title) records["profile.title"] = profile.title;
-  if (profile.company) records["profile.company"] = profile.company;
+  if (profile.tagline) records["profile.tagline"] = profile.tagline;
   if (profile.logo) records["profile.logo"] = profile.logo;
 
   const brandColors = decodeProfileBrandColors(profile);

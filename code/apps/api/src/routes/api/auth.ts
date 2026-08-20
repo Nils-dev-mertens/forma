@@ -246,8 +246,7 @@ router.get("/me", async (req, res) => {
  *             type: object
  *             properties:
  *               displayName: { type: string }
- *               company: { type: string }
- *               title: { type: string }
+ *               tagline: { type: string }
  *     responses:
  *       200:
  *         description: Onboarding completed
@@ -268,12 +267,11 @@ router.post("/onboarding", async (req, res) => {
       return res.status(401).json({ error: "Not authenticated" })
     }
 
-    const { displayName, company, title } = req.body ?? {}
+    const { displayName, tagline } = req.body ?? {}
 
     await updateProfile(userId, {
       displayName: typeof displayName === "string" ? displayName.trim() : undefined,
-      company: typeof company === "string" ? company.trim() : undefined,
-      title: typeof title === "string" ? title.trim() : undefined,
+      tagline: typeof tagline === "string" ? tagline.trim() : undefined,
     })
 
     await markOnboardingComplete(userId)

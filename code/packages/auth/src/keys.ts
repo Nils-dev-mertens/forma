@@ -1,9 +1,9 @@
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
-import { getKeyHash, storeKeyHash } from "@repo/db";
+import { getKeyHash, storeKeyHash, type ApiKey } from "@repo/db";
 import { SALT_ROUNDS } from "./config.ts";
 
-export type ApiKey = `key-${string}`;
+export type { ApiKey };
 
 export async function GenerateKey() {
   const key = `key-${randomBytes(32).toString("hex")}` as ApiKey;

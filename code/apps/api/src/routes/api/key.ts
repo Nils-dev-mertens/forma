@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { CheckKey, GenerateKey, hashPassword } from "@repo/auth"
 import { logger } from "@repo/logger"
+import { nodeEnv } from "../../config"
 import {
   createApiKey,
   getApiKeysByUserId,
@@ -62,7 +63,7 @@ router.post("/generate", async (req, res) => {
   try {
     // In a real implementation, this would require proper user authentication
     // For now, we'll allow key generation in development mode
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "API key generation requires authentication in production"
       })
@@ -276,7 +277,7 @@ router.get("/list", async (req, res) => {
   try {
     // In a real implementation, this would require proper user authentication
     // and would only return keys for the authenticated user
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Listing API keys requires authentication in production"
       })
@@ -363,7 +364,7 @@ router.delete("/revoke/:keyId", async (req, res) => {
     }
 
     // In a real implementation, check if the authenticated user owns this key
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Revocating API keys requires authentication in production"
       })
@@ -486,7 +487,7 @@ router.patch("/:keyId/expire", async (req, res) => {
     }
 
     // In a real implementation, check if the authenticated user owns this key
-    if (process.env.NODE_ENV !== "development") {
+    if (nodeEnv !== "development") {
       return res.status(403).json({
         error: "Updating API keys requires authentication in production"
       })

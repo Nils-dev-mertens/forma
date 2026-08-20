@@ -40,8 +40,7 @@ export async function getCurrentUser(): Promise<AuthResponse> {
 
 export async function completeOnboarding(data: {
   displayName?: string;
-  company?: string;
-  title?: string;
+  tagline?: string;
 }): Promise<{ success: true }> {
   return apiFetch<{ success: true }>("/api/auth/onboarding", {
     method: "POST",

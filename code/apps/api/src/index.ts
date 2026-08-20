@@ -1,4 +1,4 @@
-import { origin, port } from "./config"
+import { origin, port, nodeEnv } from "./config"
 import express from "express";
 import cookieSession from "cookie-session";
 import { ensureDirs, SET_IMAGES_DIR, PROFILE_LOGOS_DIR } from "@repo/storage";
@@ -22,7 +22,7 @@ initializeDatabase().catch(error => {
   console.error("Failed to initialize database:", error);
 });
 
-if (process.env.NODE_ENV === "development") {
+if (nodeEnv === "development") {
     app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
 
@@ -34,8 +34,8 @@ app.use(
     name: "session",
     keys: [process.env.SESSION_SECRET ?? "development-secret-change-in-production"],
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: nodeEnv === "production",
+    sameSite: nodeEnv === "production" ? "none" : "lax",
     httpOnly: true,
   })
 );

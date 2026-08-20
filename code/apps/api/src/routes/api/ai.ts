@@ -8,6 +8,7 @@ import {
   getAiMessagesBySessionId,
   addAiMessage,
   updateAiSessionUpdatedAt,
+  createAiLog,
   getTemplateByName,
   createTemplate,
 } from "@repo/db";
@@ -18,6 +19,7 @@ import { loadSystemPrompt } from "../../services/ai/prompts.ts";
 import { getTemplate, saveTemplate } from "@repo/storage";
 import { requireUserId } from "../../utils/auth.ts";
 import { validateHtml } from "../../utils/html-validation.ts";
+import { aiDefaultModel, nodeEnv } from "../../config.ts";
 
 const router: Router = Router();
 
@@ -106,7 +108,7 @@ function isSafeTemplateName(name: string): boolean {
 // setup and read-only session endpoints are left unlimited so users can still
 // configure keys and browse history.
 const isDevOrTest = () => {
-  const env = process.env.NODE_ENV;
+  const env = nodeEnv;
   return env === "development" || env === "test";
 };
 
@@ -296,11 +298,14 @@ router.post("/session", async (req, res) => {
  *       404: { description: Session not found }
  */
 router.post("/session/:sessionId/message", async (req, res) => {
-  try {
-    const userId = requireUserId(res);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const userId = requireUserId(res);
+  const sessionId = Number(req.params.sessionId);
+  let provider = "openai";
+  let system: string | null = null;
+  let userPrompt: string | null = null;
 
-    const sessionId = Number(req.params.sessionId);
+  try {
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
     if (!Number.isInteger(sessionId)) {
       return res.status(400).json({ error: "Invalid sessionId" });
     }
@@ -315,19 +320,22 @@ router.post("/session/:sessionId/message", async (req, res) => {
       return res.status(400).json({ error: "text is required" });
     }
 
+    const keyRecord = await getAiKeyByUserId(userId);
+    provider = keyRecord?.provider ?? "openai";
+
     let existingTemplateContent: string | null = null;
     if (session.contextTemplateName) {
       existingTemplateContent = await getTemplate(session.contextTemplateName);
     }
 
-    const system = await loadSystemPrompt("template", userId);
+    system = await loadSystemPrompt("template", userId);
     const history = await getAiMessagesBySessionId(sessionId, { limit: 50 });
     const previousMessages: AiMessage[] = history.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-    let userPrompt = body.text;
+    userPrompt = body.text;
     if (existingTemplateContent) {
       userPrompt = `${userPrompt}\n\nExisting template to edit:\n\`\`\`html\n${existingTemplateContent}\n\`\`\``;
     }
@@ -347,6 +355,21 @@ router.post("/session/:sessionId/message", async (req, res) => {
     await addAiMessage(sessionId, "assistant", text);
     await updateAiSessionUpdatedAt(sessionId);
 
+    try {
+      await createAiLog({
+        userId,
+        sessionId,
+        provider,
+        model: aiDefaultModel,
+        system,
+        prompt: userPrompt,
+        response: rawResponse,
+        status: "success",
+      });
+    } catch (logError) {
+      logger.warn({ message: "Failed to log AI response", error: logError as Error });
+    }
+
     return res.json({
       success: true,
       response: text,
@@ -354,6 +377,22 @@ router.post("/session/:sessionId/message", async (req, res) => {
     });
   } catch (error) {
     logger.error({ message: "Failed to send AI message", error: error as Error });
+    if (userId) {
+      try {
+        await createAiLog({
+          userId,
+          sessionId,
+          provider,
+          model: aiDefaultModel,
+          system,
+          prompt: userPrompt,
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } catch (logError) {
+        logger.warn({ message: "Failed to log AI error", error: logError as Error });
+      }
+    }
     return res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to send AI message",
     });

@@ -1,10 +1,8 @@
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Database } from 'bun:sqlite';
-import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import * as schema from './schema.ts';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
 
 // Get the directory name of the current module
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -164,8 +162,7 @@ export async function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL UNIQUE,
         display_name TEXT,
-        title TEXT,
-        company TEXT,
+        tagline TEXT,
         brand_colors TEXT NOT NULL DEFAULT '{}',
         logo TEXT,
         social_links TEXT NOT NULL DEFAULT '{}',
@@ -176,11 +173,32 @@ export async function initializeDatabase() {
       );
     `);
 
+    // Migrate: rename title -> tagline and drop the obsolete company column
+    // from existing profiles tables.
+    try {
+      const existingProfileColumns = sqlite
+        .query("PRAGMA table_info(profiles)")
+        .all() as Array<{ name: string }>;
+      const hasTagline = existingProfileColumns.some((c) => c.name === "tagline");
+      const hasTitle = existingProfileColumns.some((c) => c.name === "title");
+      const hasCompany = existingProfileColumns.some((c) => c.name === "company");
+      if (hasTitle && !hasTagline) {
+        db.run(`ALTER TABLE profiles RENAME COLUMN title TO tagline;`);
+        console.log("Migrated profiles.title to profiles.tagline");
+      }
+      if (hasCompany) {
+        db.run(`ALTER TABLE profiles DROP COLUMN company;`);
+        console.log("Dropped obsolete profiles.company column");
+      }
+    } catch (error) {
+      console.warn("Could not migrate profiles.title/company:", error);
+    }
+
     // Migrate: create a profile for every existing user that does not have one.
     try {
       const backfill = db.run(`
-        INSERT INTO profiles (user_id, display_name, title, company, brand_colors, logo, social_links, custom_data, created_at, updated_at)
-        SELECT u.id, NULL, NULL, NULL, '{}', NULL, '{}', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        INSERT INTO profiles (user_id, display_name, brand_colors, logo, social_links, custom_data, created_at, updated_at)
+        SELECT u.id, NULL, '{}', NULL, '{}', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
         WHERE p.id IS NULL;
@@ -251,6 +269,27 @@ export async function initializeDatabase() {
     db.run(
       `CREATE INDEX IF NOT EXISTS ai_messages_session_id_idx ON ai_messages(session_id);`,
     );
+
+    // Create AI response log table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ai_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        session_id INTEGER,
+        provider TEXT NOT NULL DEFAULT 'openai',
+        model TEXT NOT NULL DEFAULT '',
+        system TEXT,
+        prompt TEXT,
+        response TEXT,
+        status TEXT NOT NULL DEFAULT 'success',
+        error TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES ai_sessions(id) ON DELETE SET NULL
+      );
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS ai_logs_user_id_idx ON ai_logs(user_id);`);
 
     console.log('Database initialized and tables created');
   } catch (error) {

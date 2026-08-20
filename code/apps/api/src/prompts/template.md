@@ -20,7 +20,7 @@ Return a JSON object with exactly two fields:
 
 1. The HTML must be a complete, self-contained snippet with inline CSS in a `<style>` block.
 2. Use inline CSS in a `<style>` block. Do not reference external files.
-3. Use placeholders like `{{ name }}`, `{{ title }}`, `{{ company }}`, `{{ profile.company }}`, etc., where data should be injected.
+3. Use placeholders like `{{ name }}`, `{{ tagline }}`, `{{ profile.displayName }}`, `{{ profile.tagline }}`, etc., where data should be injected.
 4. The template must be responsive within its fixed dimensions. Use a wrapper with a fixed width/height in pixels.
 5. Keep the design clean, readable, and on-brand.
 6. If the user asks to edit an existing template, preserve its placeholders and field names unless the user explicitly tells you to change them.
@@ -29,14 +29,9 @@ Return a JSON object with exactly two fields:
 
 ## Brand context
 
-Use the following brand/profile information when it is relevant. If a value is empty or missing, you may leave a sensible default or omit it.
+Use the following brand/profile information when it is relevant. Every line is guaranteed to be non-empty, so you can rely on the values present.
 
-- Display name: {{profile.displayName}}
-- Title: {{profile.title}}
-- Company: {{profile.company}}
-- Brand colors: {{profile.brandColors}}
-- Social links: {{profile.socialLinks}}
-- Custom data: {{profile.customData}}
+{{brandContext}}
 
 ## User request
 
