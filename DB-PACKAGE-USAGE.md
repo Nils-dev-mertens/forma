@@ -82,3 +82,6 @@ cd apps/api && bun run dev
 - The fetch logic is written once.
 - Both apps use the same shared package.
 - The shared function is easy to test and maintain.
+
+
+
