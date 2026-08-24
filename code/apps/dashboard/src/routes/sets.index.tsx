@@ -4,17 +4,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { createSet, getSets, type SetField } from "@/lib/api/sets";
-import { getTemplates } from "@/lib/api/templates";
+import { getTemplates, getTemplateFields } from "@/lib/api/templates";
 
 export const Route = createFileRoute("/sets/")({ component: SetsPage });
 
 const FIELD_TYPES = ["string", "number", "boolean", "image"] as const;
+
+function inferFieldType(name: string): SetField["type"] {
+  return /image|logo|photo|picture|img|banner|avatar/i.test(name) ? "image" : "string";
+}
 
 function SetsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
   const [fields, setFields] = useState<SetField[]>([]);
+  // Tracks which field names were auto-added from each selected template, so
+  // they can be pruned when the template is deselected.
+  const [autoFields, setAutoFields] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -43,12 +50,42 @@ function SetsPage() {
     },
   });
 
-  function toggleTemplate(templateName: string) {
-    setSelectedTemplates((prev) =>
-      prev.includes(templateName)
-        ? prev.filter((t) => t !== templateName)
-        : [...prev, templateName],
-    );
+  async function toggleTemplate(templateName: string) {
+    if (selectedTemplates.includes(templateName)) {
+      setSelectedTemplates((prev) => prev.filter((t) => t !== templateName));
+
+      // Prune fields that came from this template and aren't required by any
+      // other still-selected template.
+      const names = autoFields[templateName] ?? [];
+      const stillNeeded = new Set(
+        Object.entries(autoFields)
+          .filter(([t]) => t !== templateName)
+          .flatMap(([, ns]) => ns),
+      );
+      setFields((prev) =>
+        prev.filter((f) => !(names.includes(f.fieldname) && !stillNeeded.has(f.fieldname))),
+      );
+      setAutoFields((prev) => {
+        const next = { ...prev };
+        delete next[templateName];
+        return next;
+      });
+    } else {
+      setSelectedTemplates((prev) => [...prev, templateName]);
+      try {
+        const { fields: names } = await getTemplateFields(templateName);
+        setAutoFields((prev) => ({ ...prev, [templateName]: names }));
+        setFields((prev) => {
+          const existing = new Set(prev.map((f) => f.fieldname));
+          const additions = names
+            .filter((n) => !existing.has(n))
+            .map((n) => ({ fieldname: n, type: inferFieldType(n), required: false }));
+          return [...prev, ...additions];
+        });
+      } catch {
+        // Field extraction failed; the user can still add fields manually.
+      }
+    }
   }
 
   function addField() {
@@ -99,7 +136,8 @@ function SetsPage() {
         <CardHeader>
           <CardTitle>Create a set</CardTitle>
           <CardDescription>
-            Pick a name, choose the templates it renders, and define the entry fields.
+            Pick a name, choose the templates it renders, and the entry fields are
+            filled in automatically from each template's placeholders.
           </CardDescription>
         </CardHeader>
         <CardContent>
