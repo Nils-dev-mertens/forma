@@ -25,6 +25,7 @@ import {
 } from "@repo/db";
 import { logger } from "@repo/logger";
 import { imagePathToDataUrl } from "./imageDataUrls.ts";
+import { fireHooks, type HookFailure } from "./hooks.ts";
 
 interface TriggerContext {
   userId: number;
@@ -37,13 +38,20 @@ interface TriggerFailure {
   reason: string;
 }
 
+interface RenderedImage {
+  name: string;
+  template: string;
+}
+
 interface TriggerResult {
-  rendered: string[];
+  rendered: RenderedImage[];
   deleted: string[];
   /** Per-template render failures with the actual error message. */
   failed: TriggerFailure[];
   /** Templates that were in the trigger config but no longer exist for this user. */
   missing: string[];
+  /** Export hook failures (non-fatal) recorded after rendering. */
+  hookFailures: HookFailure[];
 }
 
 /**
@@ -146,8 +154,8 @@ async function deleteImagesRowAndBlob(imgs: Image[]): Promise<void> {
 async function renderTemplates(
   ctx: TriggerContext,
   actions: TriggerAction[],
-): Promise<{ rendered: string[]; failed: TriggerFailure[] }> {
-  const rendered: string[] = [];
+): Promise<{ rendered: RenderedImage[]; failed: TriggerFailure[] }> {
+  const rendered: RenderedImage[] = [];
   const failed: TriggerFailure[] = [];
   for (const action of actions) {
     const imagename = generateRandomName({ length: 12, endsWith: ".png" });
@@ -185,7 +193,7 @@ async function renderTemplates(
       // createImage does not accept entryId directly; link after creation so
       // getImagesByEntryId* queries can find the image.
       await linkImageToEntry(image.id, ctx.entry.id);
-      rendered.push(imagename);
+      rendered.push({ name: imagename, template: action.template });
     } catch (error) {
       // Clean up the orphan blob we just wrote: the DB row never landed.
       try {
@@ -231,7 +239,7 @@ export async function fireTriggers(
     const deleted = linked.map((img) => img.name);
     await deleteImagesRowAndBlob(linked);
     await deleteSetImageDirectory(ctx.set.id, ctx.entry.id);
-    return { rendered: [], deleted, failed: [], missing: [] };
+    return { rendered: [], deleted, failed: [], missing: [], hookFailures: [] };
   }
 
   const triggers: SetTriggers = decodeSetTriggers(ctx.set);
@@ -241,12 +249,18 @@ export async function fireTriggers(
   );
 
   if (actions.length === 0) {
-    return { rendered: [], deleted: [], failed: [], missing };
+    return { rendered: [], deleted: [], failed: [], missing, hookFailures: [] };
   }
 
+  let hookFailures: HookFailure[] = [];
   if (event === "add") {
     const { rendered, failed } = await renderTemplates(ctx, actions);
-    return { rendered, deleted: [], failed, missing };
+    hookFailures = await fireHooks(
+      { set: ctx.set, entry: { id: ctx.entry.id, data: decodeEntryData(ctx.entry) } },
+      "add",
+      rendered,
+    );
+    return { rendered, deleted: [], failed, missing, hookFailures };
   }
 
   // event === "modify"
@@ -261,7 +275,12 @@ export async function fireTriggers(
   // Re-render exactly the templates that just had their images invalidated -
   // NOT the "add" list. Each event controls its own template set.
   const { rendered, failed } = await renderTemplates(ctx, actions);
-  return { rendered, deleted, failed, missing };
+  hookFailures = await fireHooks(
+    { set: ctx.set, entry: { id: ctx.entry.id, data: decodeEntryData(ctx.entry) } },
+    "modify",
+    rendered,
+  );
+  return { rendered, deleted, failed, missing, hookFailures };
 }
 
 // defaultTriggersFor is re-exported from @repo/db so the DB layer can

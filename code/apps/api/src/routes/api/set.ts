@@ -9,6 +9,7 @@ import {
   decodeSetFields,
   decodeSetTemplates,
   decodeSetTriggers,
+  decodeSetHooks,
   defaultTriggersFor,
   deleteEntriesBySetId,
   deleteEntry,
@@ -24,16 +25,20 @@ import {
   updateSet,
   validateFields,
   validateTriggers,
+  validateHooks,
   DEFAULT_RENDER_DIMENSIONS,
   type SetField,
   type SetTriggers,
   type TriggerAction,
+  type SetHook,
+  type Set,
 } from "@repo/db";
 import { fireTriggers, cleanupSetImages, unusedTemplatesForSet } from "../../services/setTriggers.ts";
+import { toDisplayHook, sendWebhook, buildWebhookPayload, reconcileHooks } from "../../services/hooks.ts";
 import { getTemplateFields } from "@repo/generation";
 import { getTemplate, saveSetImage, deleteSetImage } from "@repo/storage";
 import { imageSize } from "image-size";
-import { maxImageBytes, maxImageDimension, maxUploadFiles } from "../../config.ts";
+import { maxImageBytes, maxImageDimension, maxUploadFiles, origin } from "../../config.ts";
 
 const ALLOWED_IMAGE_TYPES = [
   "image/png",
@@ -179,6 +184,29 @@ function normalizeTriggers(input: unknown, templates: string[]): SetTriggers {
   };
 }
 
+/**
+ * Attach a decoded, client-safe representation of a set to its raw row:
+ * fields / templates / triggers are decoded from JSON, and hooks are decrypted
+ * with secrets masked.
+ */
+function presentSet(row: Set) {
+  return {
+    ...row,
+    fields: decodeSetFields(row),
+    templates: decodeSetTemplates(row),
+    triggers: decodeSetTriggers(row),
+    hooks: decodeSetHooks(row).map(toDisplayHook),
+  };
+}
+
+/**
+ * Encrypt a client-supplied hooks array for storage: validate the array shape
+ * and each destination config, then encrypt every config blob.
+ */
+function prepareHooksForStorage(hooks: unknown, existing: SetHook[] = []): SetHook[] {
+  return reconcileHooks(hooks as SetHook[], existing);
+}
+
 // =====================================================================
 // /api/set  --  Sets CRUD
 // =====================================================================
@@ -247,7 +275,7 @@ router.post("/", async (req, res) => {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const { name, description, fields, templates, triggers } = req.body ?? {};
+    const { name, description, fields, templates, triggers, hooks } = req.body ?? {};
     if (typeof name !== "string" || name.trim() === "") {
       return res.status(400).json({ error: "name is required" });
     }
@@ -296,18 +324,14 @@ router.post("/", async (req, res) => {
       fields: fields as SetField[],
       templates: templates as string[],
       triggers: tr,
+      hooks: hooks === undefined || hooks === null ? undefined : prepareHooksForStorage(hooks),
     });
     if (!created) {
       return res.status(409).json({ error: "A set with this name already exists" });
     }
     return res.status(201).json({
       success: true,
-      set: {
-        ...created,
-        fields: decodeSetFields(created),
-        templates: decodeSetTemplates(created),
-        triggers: decodeSetTriggers(created),
-      },
+      set: presentSet(created),
     });
   } catch (error) {
     logger.error({ message: "Failed to create set", error: error as Error });
@@ -336,12 +360,7 @@ router.get("/", async (req, res) => {
     const rows = await getSetsByUserId(userId);
     return res.json({
       success: true,
-      sets: rows.map((row) => ({
-        ...row,
-        fields: decodeSetFields(row),
-        templates: decodeSetTemplates(row),
-        triggers: decodeSetTriggers(row),
-      })),
+      sets: rows.map((row) => presentSet(row)),
     });
   } catch (error) {
     logger.error({ message: "Failed to list sets", error: error as Error });
@@ -379,12 +398,7 @@ router.get("/:setId", async (req, res) => {
     const row = own.set;
     return res.json({
       success: true,
-      set: {
-        ...row,
-        fields: decodeSetFields(row),
-        templates: decodeSetTemplates(row),
-        triggers: decodeSetTriggers(row),
-      },
+      set: presentSet(row),
       unusedTemplates: unusedTemplatesForSet(row),
     });
   } catch (error) {
@@ -469,6 +483,7 @@ router.patch("/:setId", async (req, res) => {
       fields?: SetField[];
       templates?: string[];
       triggers?: SetTriggers;
+      hooks?: SetHook[];
     } = {};
     if (req.body?.name !== undefined) {
       if (typeof req.body.name !== "string" || req.body.name.trim() === "") {
@@ -504,17 +519,21 @@ router.patch("/:setId", async (req, res) => {
       const tr = normalizeTriggers(req.body.triggers, effectiveTemplates);
       patch.triggers = tr;
     }
+    if (req.body?.hooks !== undefined) {
+      try {
+        patch.hooks = prepareHooksForStorage(req.body.hooks, decodeSetHooks(own.set));
+      } catch (error) {
+        return res.status(400).json({
+          error: error instanceof Error ? error.message : "Invalid hooks",
+        });
+      }
+    }
 
     const updated = await updateSet(setId, patch);
     if (!updated) return res.status(404).json({ error: "Set not found" });
     return res.json({
       success: true,
-      set: {
-        ...updated,
-        fields: decodeSetFields(updated),
-        templates: decodeSetTemplates(updated),
-        triggers: decodeSetTriggers(updated),
-      },
+      set: presentSet(updated),
     });
   } catch (error) {
     logger.error({ message: "Failed to update set", error: error as Error });
@@ -557,6 +576,101 @@ router.delete("/:setId", async (req, res) => {
   } catch (error) {
     logger.error({ message: "Failed to delete set", error: error as Error });
     return res.status(500).json({ error: "Failed to delete set" });
+  }
+});
+
+/**
+ * @openapi
+ * /api/set/{setId}/hooks/test:
+ *   post:
+ *     summary: Test-send a hook
+ *     description: |
+ *       Validate a hook config and fire a single test webhook (Phase 1) using a
+ *       sample payload built from the set's most recent entry. Does not persist
+ *       the hook. Returns whether the destination accepted the request.
+ *     tags: [Sets]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: setId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [hook]
+ *             properties:
+ *               hook:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: string }
+ *                   type: { type: string, enum: [webhook, email] }
+ *                   events: { type: array, items: { type: string } }
+ *                   config: { type: object, properties: { url: { type: string } } }
+ *     responses:
+ *       200: { description: Test result returned (delivered / error) }
+ *       400: { description: Invalid hook config }
+ *       404: { description: Set not found }
+ */
+router.post("/:setId/hooks/test", async (req, res) => {
+  try {
+    const userId = requireUserId(res);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const setId = parseIntParam(req.params.setId);
+    if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
+    const own = await assertOwnership(userId, setId);
+    if (!own.ok) return res.status(own.status).json({ error: own.message });
+
+    const hook = req.body?.hook;
+    if (!hook || typeof hook !== "object") {
+      return res.status(400).json({ error: "hook is required" });
+    }
+    if (hook.type !== "webhook") {
+      return res.status(400).json({ error: "Only webhook hooks can be tested in this phase" });
+    }
+    const config = (hook.config ?? {}) as Record<string, unknown>;
+    const url = config.url;
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+      return res.status(400).json({ error: "webhook requires a valid http(s) url" });
+    }
+
+    // Build a sample payload from the most recent entry (if any).
+    const entries = await getEntriesBySetId(setId);
+    const latest = entries[entries.length - 1];
+    const sampleImages = latest ? await getImagesByEntryId(latest.id) : [];
+    const payload = buildWebhookPayload(
+      {
+        set: own.set,
+        entry: latest
+          ? { id: latest.id, data: decodeEntryData(latest) }
+          : { id: 0, data: {} },
+      },
+      "add",
+      sampleImages.map((img) => ({
+        name: img.name,
+        template: img.template ?? "",
+        url: `${origin}/api/photos/${img.name}`,
+      })),
+    );
+
+    try {
+      await sendWebhook(
+        { url, inlineBase64: config.inlineBase64 === true },
+        payload,
+      );
+      return res.json({ success: true, delivered: true });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return res.json({ success: true, delivered: false, error: reason });
+    }
+  } catch (error) {
+    logger.error({ message: "Failed to test hook", error: error as Error });
+    return res.status(500).json({ error: "Failed to test hook" });
   }
 });
 

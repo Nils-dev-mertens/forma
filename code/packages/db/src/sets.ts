@@ -41,6 +41,27 @@ export interface SetTriggers {
   modify: TriggerAction[];
 }
 
+/** A destination that receives the rendered images after an event fires. */
+export type HookType = "webhook" | "email";
+
+/** Events that can trigger a hook (mirrors the render trigger events). */
+export type HookEvent = "add" | "modify";
+
+/**
+ * A single export hook attached to a set. `config` holds destination-specific
+ * settings (a webhook URL, SMTP credentials, etc). The API layer encrypts the
+ * `config` at rest, so the value stored in the DB is opaque to this package.
+ */
+export interface SetHook {
+  id: string;
+  type: HookType;
+  events: HookEvent[];
+  config: unknown;
+}
+
+/** Decoded (still encrypted at the storage layer) hooks for a set. */
+export type SetHooks = SetHook[];
+
 /** Default render dimensions. */
 export const DEFAULT_RENDER_DIMENSIONS = { widthPx: 1200, heightPx: 800 } as const;
 
@@ -69,6 +90,7 @@ interface CreateSetInput {
   fields: SetField[];
   templates: SetTemplateNames;
   triggers?: SetTriggers;
+  hooks?: SetHooks;
 }
 
 interface UpdateSetInput {
@@ -77,6 +99,7 @@ interface UpdateSetInput {
   fields?: SetField[];
   templates?: SetTemplateNames;
   triggers?: SetTriggers;
+  hooks?: SetHooks;
 }
 
 function serialize(input: CreateSetInput | UpdateSetInput) {
@@ -88,6 +111,10 @@ function serialize(input: CreateSetInput | UpdateSetInput) {
     triggers:
       "triggers" in input && input.triggers
         ? JSON.stringify(input.triggers)
+        : undefined,
+    hooks:
+      "hooks" in input && input.hooks
+        ? JSON.stringify(input.hooks)
         : undefined,
   };
 }
@@ -110,6 +137,7 @@ export async function createSet(input: CreateSetInput): Promise<Set | null> {
     throw new Error("createSet requires fields and templates");
   }
   const triggers = partial.triggers ?? JSON.stringify(defaultTriggersFor(input.templates));
+  const hooks = partial.hooks ?? JSON.stringify([]);
 
   const row: NewSet = {
     userId: input.userId,
@@ -118,6 +146,7 @@ export async function createSet(input: CreateSetInput): Promise<Set | null> {
     fields: partial.fields,
     templates: partial.templates,
     triggers,
+    hooks,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -231,6 +260,63 @@ export function decodeSetTriggers(set: Set): SetTriggers {
   } catch {
     return empty;
   }
+}
+
+export const HOOK_TYPES: HookType[] = ["webhook", "email"];
+export const HOOK_EVENTS: HookEvent[] = ["add", "modify"];
+
+/**
+ * Decode the set's hooks. The stored `config` is opaque (encrypted at the API
+ * layer), so we return it as-is; callers that need the plaintext must decrypt.
+ * Always returns a safe default (empty array) on malformed input.
+ */
+export function decodeSetHooks(set: Set): SetHooks {
+  if (!set.hooks) return [];
+  try {
+    const parsed = JSON.parse(set.hooks);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as SetHooks;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Validate a list of export hooks. Returns the first error message or null.
+ * `config` is validated lightly here (must be an object); destination-specific
+ * validation (e.g. webhook URL scheme) is enforced by the API layer which also
+ * encrypts the config before persisting.
+ */
+export function validateHooks(hooks: unknown): string | null {
+  if (!Array.isArray(hooks)) return "hooks must be an array";
+  const seen = new Set<string>();
+  for (const raw of hooks as SetHook[]) {
+    if (!raw || typeof raw !== "object") {
+      return "every hook must be an object";
+    }
+    if (typeof raw.id !== "string" || raw.id.trim() === "") {
+      return "every hook needs a non-empty id";
+    }
+    if (seen.has(raw.id)) {
+      return `duplicate hook id: ${raw.id}`;
+    }
+    seen.add(raw.id);
+    if (!HOOK_TYPES.includes(raw.type)) {
+      return `unsupported hook type: ${String(raw.type)}`;
+    }
+    if (!Array.isArray(raw.events) || raw.events.length === 0) {
+      return `hook ${raw.id}: events must be a non-empty array`;
+    }
+    for (const ev of raw.events) {
+      if (!HOOK_EVENTS.includes(ev)) {
+        return `hook ${raw.id}: unsupported event: ${String(ev)}`;
+      }
+    }
+    if (typeof raw.config !== "object" || raw.config === null || Array.isArray(raw.config)) {
+      return `hook ${raw.id}: config must be an object`;
+    }
+  }
+  return null;
 }
 
 /**

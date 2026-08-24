@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { createEntry, deleteEntry, getEntries, getSet, updateEntry, updateSet, deleteSet } from "@/lib/api/sets";
+import { createEntry, deleteEntry, getEntries, getSet, updateEntry, updateSet, deleteSet, testHook, type SetHook, type DisplayHook } from "@/lib/api/sets";
 import { getTemplates } from "@/lib/api/templates";
 import { buildProfilePreviewData, getUser, type Profile } from "@/lib/api/profile";
 import { useAuth } from "@/lib/auth";
@@ -20,8 +20,16 @@ function SetDetailPage() {
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [hookWarning, setHookWarning] = useState<string | null>(null);
   const [setName, setSetName] = useState("");
   const [setDescription, setSetDescription] = useState("");
+  const [hooks, setHooks] = useState<SetHook[]>([]);
+  const [hookDisplay, setHookDisplay] = useState<Record<string, string>>({});
+  const [newHookUrl, setNewHookUrl] = useState("");
+  const [newHookAdd, setNewHookAdd] = useState(true);
+  const [newHookModify, setNewHookModify] = useState(false);
+  const [hookError, setHookError] = useState<string | null>(null);
+  const [hookTest, setHookTest] = useState<string | null>(null);
 
   const { user } = useAuth();
 
@@ -62,10 +70,12 @@ function SetDetailPage() {
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => createEntry(setIdNumber, data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setFormData({});
       setEditingEntryId(null);
       setError(null);
+      const failures = (data as { triggers?: { hookFailures?: unknown[] } }).triggers?.hookFailures;
+      setHookWarning(failures && failures.length > 0 ? "Warning: one or more export hooks failed after rendering." : null);
       void queryClient.invalidateQueries({ queryKey: ["entries", setIdNumber] });
     },
     onError: (err) => {
@@ -76,10 +86,12 @@ function SetDetailPage() {
   const updateEntryMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       updateEntry(setIdNumber, editingEntryId!, data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setFormData({});
       setEditingEntryId(null);
       setError(null);
+      const failures = (data as { triggers?: { hookFailures?: unknown[] } }).triggers?.hookFailures;
+      setHookWarning(failures && failures.length > 0 ? "Warning: one or more export hooks failed after rendering." : null);
       void queryClient.invalidateQueries({ queryKey: ["entries", setIdNumber] });
     },
     onError: (err) => {
@@ -101,6 +113,91 @@ function SetDetailPage() {
       setSetDescription(setData.set.description ?? "");
     }
   }, [setData]);
+
+  // Mirror the set's configured hooks. Existing hooks arrive with a masked
+  // config (no plaintext secrets); we keep them as config-less entries so a
+  // save preserves the server-stored config rather than clobbering it.
+  useEffect(() => {
+    const incoming = setData?.set.hooks ?? [];
+    setHooks(
+      incoming.map((h: DisplayHook) => ({
+        id: h.id,
+        type: h.type,
+        events: h.events,
+        config: {},
+      })),
+    );
+    const display: Record<string, string> = {};
+    for (const h of incoming) {
+      if (typeof h.config.url === "string") display[h.id] = h.config.url;
+    }
+    setHookDisplay(display);
+  }, [setData]);
+
+  const updateHooksMutation = useMutation({
+    mutationFn: (next: SetHook[]) => updateSet(setIdNumber, { hooks: next }),
+    onSuccess: () => {
+      setHookError(null);
+      setNewHookUrl("");
+      setNewHookAdd(true);
+      setNewHookModify(false);
+      void queryClient.invalidateQueries({ queryKey: ["set", setIdNumber] });
+    },
+    onError: (err) => {
+      setHookError(err instanceof Error ? err.message : "Failed to update hooks");
+    },
+  });
+
+  function addHook() {
+    const url = newHookUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      setHookError("Enter a valid http(s) webhook URL");
+      return;
+    }
+    const events: ("add" | "modify")[] = [];
+    if (newHookAdd) events.push("add");
+    if (newHookModify) events.push("modify");
+    if (events.length === 0) {
+      setHookError("Select at least one event (add or modify)");
+      return;
+    }
+    const next: SetHook[] = [
+      ...hooks,
+      { id: crypto.randomUUID(), type: "webhook", events, config: { url } },
+    ];
+    updateHooksMutation.mutate(next);
+  }
+
+  function removeHook(id: string) {
+    updateHooksMutation.mutate(hooks.filter((h) => h.id !== id));
+  }
+
+  async function testSendHook() {
+    const url = newHookUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      setHookError("Enter a valid http(s) webhook URL to test");
+      return;
+    }
+    const events: ("add" | "modify")[] = [];
+    if (newHookAdd) events.push("add");
+    if (newHookModify) events.push("modify");
+    if (events.length === 0) {
+      setHookError("Select at least one event (add or modify)");
+      return;
+    }
+    setHookTest(null);
+    try {
+      const res = await testHook(setIdNumber, {
+        id: "test",
+        type: "webhook",
+        events,
+        config: { url },
+      });
+      setHookTest(res.delivered ? "Delivered successfully" : `Failed: ${res.error ?? "unknown error"}`);
+    } catch (err) {
+      setHookTest(err instanceof Error ? err.message : "Test send failed");
+    }
+  }
 
   const updateSetMutation = useMutation({
     mutationFn: () =>
@@ -392,6 +489,95 @@ function SetDetailPage() {
             </Button>
           </div>
           {settingsError && <p className="text-sm text-destructive">{settingsError}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Export hooks</CardTitle>
+          <CardDescription>
+            Send the rendered images somewhere after an entry is added or modified.
+            Webhook (HTTP POST) is supported now; email and storage are coming next.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {hooks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No export hooks configured.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {hooks.map((hook) => (
+                <li
+                  key={hook.id}
+                  className="flex items-center justify-between rounded-lg border bg-card p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium capitalize">{hook.type}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {hook.events.join(", ")}
+                      {hookDisplay[hook.id] ? ` · ${hookDisplay[hook.id]}` : ""}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => removeHook(hook.id)}
+                    disabled={updateHooksMutation.isPending}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex flex-col gap-2 border-t pt-3">
+            <p className="text-sm font-medium">Add webhook</p>
+            <input
+              value={newHookUrl}
+              onChange={(e) => setNewHookUrl(e.target.value)}
+              placeholder="https://example.com/webhook"
+              className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={newHookAdd}
+                  onChange={(e) => setNewHookAdd(e.target.checked)}
+                />
+                on add
+              </label>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={newHookModify}
+                  onChange={(e) => setNewHookModify(e.target.checked)}
+                />
+                on modify
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                onClick={addHook}
+                disabled={updateHooksMutation.isPending}
+              >
+                {updateHooksMutation.isPending ? "Saving..." : "Save webhook"}
+              </Button>
+              <Button type="button" variant="outline" onClick={testSendHook}>
+                Test send
+              </Button>
+            </div>
+            {hookTest && <p className="text-xs text-muted-foreground">{hookTest}</p>}
+            {hookError && <p className="text-sm text-destructive">{hookError}</p>}
+          </div>
+
+          {hookWarning && (
+            <p className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-xs text-yellow-700">
+              {hookWarning}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

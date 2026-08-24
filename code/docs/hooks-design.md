@@ -110,5 +110,105 @@ images to a destination**.
 
 1. Design — this document. ✅
 2. Phase 1 (webhook): schema `hooks` column + migration, `hooks.ts` service,
-   `PATCH`/`GET` API, dashboard "Hooks" card, tests.
+   `PATCH`/`GET` API, dashboard "Hooks" card, tests. ✅ Implemented 2026-08-25.
 3. Phase 2 (email): SMTP service + UI, reusing the same `Hook` shape.
+
+## Phase 1 implementation notes (2026-08-25)
+
+- **Storage**: `sets.hooks` is a `text` column (raw SQL + drizzle schema +
+  idempotent `ALTER TABLE` migration in `packages/db/src/client.ts`). Decoded
+  via `decodeSetHooks` (mirrors `decodeSetTriggers`).
+- **Encryption**: each hook's `config` is encrypted at rest with the same
+  envelope cipher as AI keys (`apps/api/src/utils/crypto.ts`). The API layer
+  encrypts on write (`encryptHookForStorage` / `reconcileHooks`) and decrypts
+  on read (`toDisplayHook` masks secrets, currently the webhook URL →
+  `https://host/****`).
+- **Round-trip without secrets**: `PATCH /api/set/:id` accepts a full hooks
+  array. A hook supplied *without* a `config` but whose `id` matches an existing
+  stored hook keeps its previously-encrypted config (`reconcileHooks`), so the
+  dashboard can re-submit the GET-masked form without clobbering secrets.
+  Supplying a `config` (re)encrypts; ids absent from the incoming array are
+  dropped.
+- **Firing**: `fireHooks` (new `apps/api/src/services/hooks.ts`) runs after
+  rendering in `fireTriggers` for `add`/`modify`, filtered by event. Webhook
+  payload shape matches the design; image URLs use `ORIGIN` + `/api/photos/`.
+  `inlineBase64` opt-in reads the blob via `@repo/storage`. Failures are
+  non-fatal and returned as `hookFailures` on the trigger result; surfaced in
+  the dashboard as a yellow warning after add/edit.
+- **Test-send**: `POST /api/set/:id/hooks/test` validates a hook config and
+  fires one webhook with a sample payload built from the set's latest entry;
+  returns `{ delivered, error? }`.
+- **Validation**: `validateHooks` (array shape, type, events) + per-type
+  `validateHookConfigForStorage` (webhook URL must be http(s)).
+- **Dashboard**: `Sets.$setId` adds an "Export hooks" card (list / remove /
+  add webhook with event toggles / test send) plus per-entry hook-failure
+  warning. Types in `apps/dashboard/src/lib/api/sets.ts`.
+- **Tests**: `apps/api/test/hooks.test.ts` covers encrypt/mask, fireHooks
+  success+failure, sendWebhook error, PATCH/GET masking, reconciliation, and
+  test-send.
+
+## Open questions (resolve during Phase 2)
+
+- Email `to`: a set-level address list, or the user's profile email?
+- Retries / rate limits for external destinations.
+- Storage destination (S3/GCS) as a later phase.
+
+---
+
+## Future: visual node canvas (design only — not yet built)
+
+> Captured 2026-08-25 as a north-star idea. The user wants a drag-to-connect
+> canvas on the set page replacing the current typed trigger/hook JSON with a
+> graph. Written up here so it can become a ticket later; no code yet.
+
+### Why it makes sense
+
+The current model is two JSON lists on a set:
+
+- `triggers` (`SetTriggers`): `add` / `modify` event → templates to render.
+- `hooks` (`SetHook[]`): `add` / `modify` event → destinations to send to.
+
+A canvas is the *same graph drawn instead of typed*, with one new capability:
+drawing an edge **from a template node to a hook node** ("this hook fires after
+this specific template rendered") — which the current "hook fires after all
+rendering of the event" model cannot express.
+
+### Graph shape
+
+- **Source (event) nodes**: "add entry", "edit entry" (the existing
+  `add` / `modify` events; `remove` stays auto-cleanup, not a canvas node).
+- **Action nodes**:
+  - *Render template* — one per attached template (today a `TriggerAction`).
+  - *Send to destination* — a `Hook` (webhook today; email/storage in Phase 2).
+- **Edges**: event → action. The valuable extension is action → action
+  (template → hook) to express ordering/dependency.
+
+### Two build strategies
+
+1. **Canvas over the existing JSON (recommended first step).** The graph is
+   just a visual editor for the current `triggers` + `hooks` shapes: sources are
+   `add`/`modify`, edges are event→action. No backend executor change — keep
+   `fireTriggers` reading the two arrays. Fastest path to drag-to-connect UX;
+   does NOT yet support template→hook edges (those would be ignored by the
+   executor until strategy 2).
+2. **Full graph + executor.** New `nodes` + `edges` storage (replace or
+   complement `triggers`/`hooks` columns), and a topological execution engine in
+   `fireTriggers` that walks the DAG (so template→hook edges actually gate the
+   hook). Larger frontend + backend effort and a migration that compiles the old
+   JSON into the graph (or vice-versa).
+
+### Open questions for when this is picked up
+
+- Library: `@xyflow/react` (React Flow) fits the React 19 + TanStack stack.
+- Does the canvas also visualize the live "rendered" state / hook failures per
+  node (e.g. a red border on a failed hook node)?
+- How to keep the mobile/compact fallback (the current "Hooks" + "Set settings"
+  cards) when a canvas is too wide?
+- Storage/migration path from `triggers`+`hooks` JSON to a graph.
+
+### Suggested ticket
+
+"Visual workflow canvas for sets: drag-to-connect entry events → template
+render / export hooks (and template → hook edges)." Depends on #20 Phase 1
+(webhook) and ideally Phase 2 (email/storage) so there are enough node types to
+make the canvas worthwhile.
