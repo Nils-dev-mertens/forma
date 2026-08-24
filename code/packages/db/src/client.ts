@@ -131,6 +131,7 @@ export async function initializeDatabase() {
         fields TEXT NOT NULL,
         templates TEXT NOT NULL,
         triggers TEXT NOT NULL,
+        hooks TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id),
@@ -150,6 +151,20 @@ export async function initializeDatabase() {
       }
     } catch (error) {
       console.warn("Could not drop sets.dimensions:", error);
+    }
+
+    // Migrate: add the hooks column to existing sets tables.
+    try {
+      const existingSetColumns = sqlite
+        .query("PRAGMA table_info(sets)")
+        .all() as Array<{ name: string }>;
+      const hasHooks = existingSetColumns.some((c) => c.name === "hooks");
+      if (!hasHooks) {
+        db.run(`ALTER TABLE sets ADD COLUMN hooks TEXT;`);
+        console.log("Added sets.hooks column");
+      }
+    } catch (error) {
+      console.warn("Could not migrate sets.hooks:", error);
     }
 
     db.run(

@@ -60,6 +60,7 @@ export const templates = sqliteTable('templates', {
 // fields:    JSON array of { fieldname, type, required? } field declarations.
 // templates: JSON array of template names attached to the set (>=1 enforced at API layer).
 // triggers:  JSON object { add: TriggerAction[], modify: TriggerAction[] }.
+// hooks:     JSON array of export destinations fired after rendering (webhook/email).
 export const sets = sqliteTable(
   'sets',
   {
@@ -70,6 +71,7 @@ export const sets = sqliteTable(
     fields: text('fields').notNull(),
     templates: text('templates').notNull(),
     triggers: text('triggers').notNull(),
+    hooks: text('hooks'),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
   },

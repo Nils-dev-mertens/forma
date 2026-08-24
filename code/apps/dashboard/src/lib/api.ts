@@ -62,7 +62,18 @@ export interface AiSessionResponse {
 
 // Curated, provider-safe model choices offered in the UI. Keep in sync with
 // SUPPORTED_MODELS in apps/api/src/services/ai/provider.ts.
-export const AI_MODELS: string[] = ["gpt-4o-mini", "gpt-4o", "o3-mini"];
+export const AI_MODELS: string[] = [
+  "gpt-4o-mini",
+  "gpt-4.1-mini",
+  "gpt-4.1",
+  "gpt-4o",
+  "gpt-4.5-preview",
+  "o3-mini",
+  "o1-mini",
+  "o3",
+  "o1",
+  "o3-pro",
+];
 
 export async function getAiKeyStatus(): Promise<ApiKeyStatus> {
   return apiFetch<ApiKeyStatus>("/api/ai/key");
@@ -93,6 +104,27 @@ export async function updateAiSessionModel(sessionId: number, model: string): Pr
     method: "PATCH",
     body: JSON.stringify({ model }),
   });
+}
+
+export interface AiLog {
+  id: number;
+  userId: number;
+  sessionId: number | null;
+  provider: string;
+  model: string;
+  system: string | null;
+  prompt: string | null;
+  response: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  status: string;
+  error: string | null;
+  createdAt: string;
+}
+
+export async function getAiLogs(): Promise<{ success: true; logs: AiLog[] }> {
+  return apiFetch<{ success: true; logs: AiLog[] }>("/api/ai/logs");
 }
 
 export async function sendMessage(sessionId: number, text: string): Promise<ChatMessageResponse> {

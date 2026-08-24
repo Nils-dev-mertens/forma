@@ -25,11 +25,17 @@ export function validateTemplateData(
 ) {
     const fields = getTemplateFields(html);
 
-    const missing = fields.filter(field =>
-        data.records[field] === undefined ||
-        data.records[field] === null ||
-        data.records[field] === ""
-    );
+    // `profile.*` placeholders are filled from the user's brand profile and are
+    // trusted to exist; they must not fail validation when a value happens to be
+    // empty (e.g. a profile with no logo). Only template-specific (entry)
+    // placeholders are required to be present in the data.
+    const missing = fields
+        .filter(field => !field.startsWith("profile."))
+        .filter(field =>
+            data.records[field] === undefined ||
+            data.records[field] === null ||
+            data.records[field] === ""
+        );
 
     return {
         valid: missing.length === 0,

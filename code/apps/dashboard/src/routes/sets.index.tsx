@@ -74,10 +74,13 @@ function SetsPage() {
       setSelectedTemplates((prev) => [...prev, templateName]);
       try {
         const { fields: names } = await getTemplateFields(templateName);
-        setAutoFields((prev) => ({ ...prev, [templateName]: names }));
+        // Profile values (profile.*) are filled from the user's brand profile at
+        // render time, not per entry — never surface them as entry fields.
+        const entryFields = names.filter((n) => !n.startsWith("profile."));
+        setAutoFields((prev) => ({ ...prev, [templateName]: entryFields }));
         setFields((prev) => {
           const existing = new Set(prev.map((f) => f.fieldname));
-          const additions = names
+          const additions = entryFields
             .filter((n) => !existing.has(n))
             .map((n) => ({ fieldname: n, type: inferFieldType(n), required: false }));
           return [...prev, ...additions];
@@ -111,7 +114,13 @@ function SetsPage() {
       return;
     }
     const validFields = fields.filter((f) => f.fieldname.trim() !== "");
-    if (validFields.length === 0) {
+    // Only template-specific placeholders must be declared as fields; `profile.*`
+    // placeholders are filled from the brand profile and need no entry field. So
+    // a set is valid with zero fields when its templates only use `profile.*`.
+    const templateSpecificCount = new Set(
+      Object.values(autoFields).flat(),
+    ).size;
+    if (templateSpecificCount > 0 && validFields.length === 0) {
       setError("Add at least one field");
       return;
     }

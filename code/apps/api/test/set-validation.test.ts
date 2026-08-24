@@ -104,6 +104,49 @@ describe("Set template field coverage validation", () => {
     expect(imageField.type).toBe("image");
   });
 
+  test("accepts a set with only `profile.*` placeholders and no fields", async () => {
+    const profileTemplate = `profile-only-${Date.now()}.html`;
+    const html =
+      '<div style="background:{{ profile.brandColors.primary }}">{{ profile.displayName }}</div>';
+    await saveTemplate(profileTemplate, html);
+    const template = await createTemplate(1, profileTemplate, html);
+    if (!template) throw new Error("Failed to create test template");
+
+    const res = await request(app)
+      .post("/api/set")
+      .send({
+        name: `profile-only-set-${Date.now()}`,
+        fields: [],
+        templates: [profileTemplate],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+  });
+
+  test("updates a set's name and description via PATCH", async () => {
+    const createRes = await request(app)
+      .post("/api/set")
+      .send({
+        name: `patch-set-${Date.now()}`,
+        fields: [
+          { fieldname: "name", type: "string" },
+          { fieldname: "title", type: "string" },
+        ],
+        templates: [templateName],
+      });
+    expect(createRes.status).toBe(201);
+    const id = createRes.body.set.id;
+
+    const newName = `renamed-${Date.now()}`;
+    const patchRes = await request(app)
+      .patch(`/api/set/${id}`)
+      .send({ name: newName, description: "updated desc" });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.set.name).toBe(newName);
+    expect(patchRes.body.set.description).toBe("updated desc");
+  });
+
   test("rejects trigger actions referencing templates not attached to the set", async () => {
     const res = await request(app)
       .post("/api/set")

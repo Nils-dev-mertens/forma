@@ -14,8 +14,21 @@ export function isSupportedProvider(value: string): value is SupportedProvider {
 
 // Curated model allowlist per provider. Users may only pick from these (plus
 // any future providers we add); free-form model strings are rejected.
+// Includes higher-accuracy / more expensive models for when output quality
+// matters more than cost.
 export const SUPPORTED_MODELS: Record<SupportedProvider, string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4o", "o3-mini"],
+  openai: [
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "gpt-4o",
+    "gpt-4.5-preview",
+    "o3-mini",
+    "o1-mini",
+    "o3",
+    "o1",
+    "o3-pro",
+  ],
 };
 
 export function isSupportedModel(provider: SupportedProvider, model: string): boolean {
@@ -112,6 +125,9 @@ export async function generateFromProvider(
     model: languageModel,
     system: options.system,
     messages: toModelMessages(options.messages),
+    // Force JSON mode so the model returns a parseable object with the
+    // `text` and `html` fields the UI relies on.
+    responseFormat: { type: "json" },
   });
   return {
     text,

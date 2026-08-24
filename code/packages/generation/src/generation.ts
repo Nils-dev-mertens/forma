@@ -19,6 +19,8 @@ export async function generateImageFromTemplate(
     const browser = await puppeteer.launch({
         headless: true,
         args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
             "--disable-web-security",
             "--allow-running-insecure-content",
             "--disable-site-isolation-trials",
@@ -34,6 +36,9 @@ export async function generateImageFromTemplate(
         deviceScaleFactor: 1,
     });
 
+    // Don't let navigation hang on slow/unreachable external resources.
+    page.setDefaultNavigationTimeout(15000);
+
     // inside generateImageFromTemplate function
     const htmlContent = await getTemplate(input.templatename);
     if (!htmlContent) {
@@ -44,7 +49,7 @@ export async function generateImageFromTemplate(
     // Set the HTML content directly
     const dataUrl = `data:text/html,${encodeURIComponent('<base href="http://localhost:3001/" />' + fillTemplate(htmlContent, input.data))}`;
 
-    await page.goto(dataUrl, { waitUntil: "load" });
+    await page.goto(dataUrl, { waitUntil: "domcontentloaded" });
 
     await page.evaluate(
         () =>
@@ -54,20 +59,36 @@ export async function generateImageFromTemplate(
                 if (imgs.length === 0) return resolve(null);
 
                 let remaining = imgs.length;
+                let settled = false;
 
                 const done = () => {
+                    if (settled) return;
                     remaining--;
-                    if (remaining === 0) resolve(null);
+                    if (remaining <= 0) {
+                        settled = true;
+                        resolve(null);
+                    }
                 };
 
                 for (const img of imgs) {
-                    if (img.complete && img.naturalWidth > 0) {
+                    // `complete` is true once an image has loaded *or* failed
+                    // (e.g. an empty `src=""`). Broken/empty images never fire
+                    // load/error again, so resolving on `complete` avoids a hang.
+                    if (img.complete) {
                         done();
                     } else {
-                        img.onload = done;
-                        img.onerror = done;
+                        img.addEventListener("load", done);
+                        img.addEventListener("error", done);
                     }
                 }
+
+                // Hard fallback: never block the render forever on a stuck image.
+                setTimeout(() => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(null);
+                    }
+                }, 5000);
             }),
     );
 

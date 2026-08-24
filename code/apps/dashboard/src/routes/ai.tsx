@@ -14,6 +14,8 @@ import {
   AI_MODELS,
   ApiError,
 } from "@/lib/api";
+import { getUser, type Profile } from "@/lib/api/profile";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/ai")({ component: AiTemplatePage });
 
@@ -57,6 +59,49 @@ function wrapHtmlForPreview(html: string): string {
 </html>`;
 }
 
+// Build a flat record of the user's profile values using the same `profile.*`
+// keys the server uses when rendering (e.g. profile.displayName,
+// profile.brandColors.primary). This is only used to produce a *visual* preview
+// — the original template (with its {{ }} placeholders) is never modified.
+function buildProfilePreviewData(profile: Profile | null): Record<string, string> {
+  const data: Record<string, string> = {};
+  if (!profile) return data;
+  if (profile.displayName) data["profile.displayName"] = profile.displayName;
+  if (profile.tagline) data["profile.tagline"] = profile.tagline;
+  if (profile.logo) data["profile.logo"] = profile.logo;
+  for (const [key, value] of Object.entries(profile.brandColors ?? {})) {
+    if (value) data[`profile.brandColors.${key}`] = value;
+  }
+  for (const [key, value] of Object.entries(profile.socialLinks ?? {})) {
+    if (value) data[`profile.socialLinks.${key}`] = value;
+  }
+  for (const [key, value] of Object.entries(profile.customData ?? {})) {
+    if (typeof value === "string") data[`profile.customData.${key}`] = value;
+    else if (typeof value === "number" || typeof value === "boolean") {
+      data[`profile.customData.${key}`] = String(value);
+    }
+  }
+  return data;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Substitute {{ placeholder }} tokens with profile values so the user sees a
+// filled-in preview. Unfilled tokens render empty; the original HTML (with the
+// {{ }} intact) is returned by the API and remains the source of truth.
+function fillPreview(html: string, profile: Profile | null): string {
+  const data = buildProfilePreviewData(profile);
+  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => {
+    const value = data[key];
+    return value !== undefined ? escapeHtml(value) : "";
+  });
+}
+
 function AiTemplatePage() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>("");
@@ -75,6 +120,13 @@ function AiTemplatePage() {
   } = useQuery({
     queryKey: ["ai-key-status"],
     queryFn: getAiKeyStatus,
+  });
+
+  const { user } = useAuth();
+  const { data: profileData } = useQuery({
+    queryKey: ["profile", user?.id],
+    queryFn: () => getUser(user!.id),
+    enabled: !!user,
   });
 
   const setupKeyMutation = useMutation({
@@ -130,6 +182,13 @@ function AiTemplatePage() {
     }
     return "";
   }, [messages]);
+
+  // Visual-only preview: fill {{ }} placeholders with profile values; the
+  // original template (with placeholders) stays untouched.
+  const previewHtml = useMemo(() => {
+    if (!latestHtml) return "";
+    return fillPreview(latestHtml, profileData?.user.profile ?? null);
+  }, [latestHtml, profileData]);
 
   async function handleSetupSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -392,7 +451,7 @@ function AiTemplatePage() {
                   <iframe
                     title="AI template preview"
                     sandbox=""
-                    srcDoc={wrapHtmlForPreview(latestHtml)}
+                    srcDoc={wrapHtmlForPreview(previewHtml)}
                     className="absolute inset-0 h-full w-full"
                   />
                 ) : (

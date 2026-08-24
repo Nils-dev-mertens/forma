@@ -17,6 +17,26 @@ export interface SetTriggers {
   modify: TriggerAction[];
 }
 
+export type HookType = "webhook" | "email";
+export type HookEvent = "add" | "modify";
+
+/** A hook as returned by the API (config decrypted, secrets masked). */
+export interface DisplayHook {
+  id: string;
+  type: HookType;
+  events: HookEvent[];
+  config: Record<string, unknown>;
+  configured: boolean;
+}
+
+/** A hook as submitted to the API (plaintext config). */
+export interface SetHook {
+  id: string;
+  type: HookType;
+  events: HookEvent[];
+  config: Record<string, unknown>;
+}
+
 export interface Set {
   id: number;
   userId: number;
@@ -25,14 +45,22 @@ export interface Set {
   fields: SetField[];
   templates: string[];
   triggers: SetTriggers;
+  hooks: DisplayHook[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface EntryImage {
+  name: string;
+  template?: string;
+  generationData?: string;
 }
 
 export interface Entry {
   id: number;
   setId: number;
   data: Record<string, unknown>;
+  images?: EntryImage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -61,10 +89,12 @@ export async function createSet(payload: {
 export async function updateSet(
   setId: number,
   payload: {
+    name?: string;
     description?: string | null;
     fields?: SetField[];
     templates?: string[];
     triggers?: SetTriggers;
+    hooks?: SetHook[];
   },
 ): Promise<{ success: true; set: Set }> {
   return apiFetch<{ success: true; set: Set }>(`/api/set/${setId}`, {
@@ -73,14 +103,33 @@ export async function updateSet(
   });
 }
 
+export async function testHook(
+  setId: number,
+  hook: SetHook,
+): Promise<{ success: true; delivered: boolean; error?: string }> {
+  return apiFetch<{ success: true; delivered: boolean; error?: string }>(
+    `/api/set/${setId}/hooks/test`,
+    {
+      method: "POST",
+      body: JSON.stringify({ hook }),
+    },
+  );
+}
+
 export async function deleteSet(setId: number): Promise<{ success: true }> {
   return apiFetch<{ success: true }>(`/api/set/${setId}`, {
     method: "DELETE",
   });
 }
 
-export async function getEntries(setId: number): Promise<{ success: true; entries: Entry[] }> {
-  return apiFetch<{ success: true; entries: Entry[] }>(`/api/set/${setId}/entry`);
+export async function getEntries(
+  setId: number,
+  options?: { withImages?: boolean },
+): Promise<{ success: true; entries: Entry[] }> {
+  const query = options?.withImages ? "?withImages=true" : "";
+  return apiFetch<{ success: true; entries: Entry[] }>(
+    `/api/set/${setId}/entry${query}`,
+  );
 }
 
 export async function createEntry(
