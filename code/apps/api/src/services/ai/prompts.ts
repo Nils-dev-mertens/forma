@@ -1,7 +1,13 @@
 import { readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { getProfileByUserId, profileToRecords, type Profile } from "@repo/db";
+import {
+  getProfileByUserId,
+  decodeProfileBrandColors,
+  decodeProfileSocialLinks,
+  decodeProfileCustomData,
+  type Profile,
+} from "@repo/db";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,39 +36,65 @@ export async function buildProfileContext(userId: number): Promise<ProfileContex
     };
   }
 
-  const records = profileToRecords(profile);
-
   return {
-    displayName: profile.displayName ?? records["profile.displayName"] ?? "",
-    tagline: profile.tagline ?? records["profile.tagline"] ?? "",
-    brandColors: profile.brandColors ?? "{}",
-    socialLinks: profile.socialLinks ?? "{}",
-    customData: profile.customData ?? "{}",
-    logo: profile.logo ?? records["profile.logo"] ?? "",
+    displayName: profile.displayName
+      ? `{{ profile.displayName }} = ${profile.displayName}`
+      : "",
+    tagline: profile.tagline
+      ? `{{ profile.tagline }} = ${profile.tagline}`
+      : "",
+    brandColors: formatProfileTokens("brandColors", decodeProfileBrandColors(profile)),
+    socialLinks: formatProfileTokens("socialLinks", decodeProfileSocialLinks(profile)),
+    customData: formatProfileTokens("customData", decodeProfileCustomData(profile)),
+    logo: profile.logo ? `{{ profile.logo }} = ${profile.logo}` : "",
   };
 }
 
+// Render a decoded profile map as "<placeholder> = <value>" lines so the model
+// copies the exact {{ profile.* }} token verbatim into the template.
+function formatProfileTokens(namespace: string, map: Record<string, unknown>): string {
+  return Object.entries(map)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(
+      ([k, v]) =>
+        `{{ profile.${namespace}.${k} }} = ${typeof v === "string" ? v : JSON.stringify(v)}`,
+    )
+    .join("\n");
+}
+
 function buildBrandContextBlock(context: ProfileContext): string {
-  const lines: string[] = [];
+  const sections: string[] = [];
   if (context.displayName.trim() !== "") {
-    lines.push(`- Display name: ${context.displayName.trim()}`);
+    sections.push(
+      `- Display name (use this placeholder in the template):\n  ${context.displayName.trim()}`,
+    );
   }
   if (context.tagline.trim() !== "") {
-    lines.push(`- Tagline: ${context.tagline.trim()}`);
+    sections.push(
+      `- Tagline (use this placeholder in the template):\n  ${context.tagline.trim()}`,
+    );
   }
-  if (context.brandColors.trim() !== "" && context.brandColors.trim() !== "{}") {
-    lines.push(`- Brand colors: ${context.brandColors.trim()}`);
+  if (context.brandColors.trim() !== "") {
+    sections.push(
+      `- Brand colors (reference each with its {{ profile.brandColors.<name> }} placeholder, e.g. style="background-color: {{ profile.brandColors.primary }}"):\n  ${context.brandColors.split("\n").join("\n  ")}`,
+    );
   }
-  if (context.socialLinks.trim() !== "" && context.socialLinks.trim() !== "{}") {
-    lines.push(`- Social links: ${context.socialLinks.trim()}`);
+  if (context.socialLinks.trim() !== "") {
+    sections.push(
+      `- Social links (use their {{ profile.socialLinks.<name> }} placeholders):\n  ${context.socialLinks.split("\n").join("\n  ")}`,
+    );
   }
-  if (context.customData.trim() !== "" && context.customData.trim() !== "{}") {
-    lines.push(`- Custom data: ${context.customData.trim()}`);
+  if (context.customData.trim() !== "") {
+    sections.push(
+      `- Custom data (use their {{ profile.customData.<name> }} placeholders):\n  ${context.customData.split("\n").join("\n  ")}`,
+    );
   }
   if (context.logo.trim() !== "") {
-    lines.push(`- Logo: ${context.logo.trim()}`);
+    sections.push(
+      `- Logo (use this placeholder in the template):\n  ${context.logo.trim()}`,
+    );
   }
-  return lines.join("\n");
+  return sections.join("\n");
 }
 
 export async function loadSystemPrompt(

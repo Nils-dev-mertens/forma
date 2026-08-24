@@ -8,6 +8,8 @@ import {
   initializeDatabase,
   createAiSession,
   getAiSessionById,
+  createAiLog,
+  getAiLogsByUserId,
 } from "@repo/db";
 import aiRoute from "../src/routes/api/ai";
 import { isSupportedModel, SUPPORTED_MODELS } from "../src/services/ai/provider";
@@ -81,5 +83,31 @@ describe("per-session model selection", () => {
 
     const cleared = await getAiSessionById(created.id);
     expect(cleared?.model).toBeNull();
+  });
+});
+
+describe("AI logs endpoint", () => {
+  test("GET /api/ai/logs returns the user's logs", async () => {
+    await createAiLog({
+      userId: 1,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      prompt: "hi",
+      response: "hello",
+      totalTokens: 10,
+      status: "success",
+    });
+
+    const res = await request(app).get("/api/ai/logs");
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.logs)).toBe(true);
+    expect(res.body.logs.length).toBeGreaterThan(0);
+    expect(res.body.logs[0].model).toBe("gpt-4o-mini");
+  });
+
+  test("logs are scoped to the requesting user", async () => {
+    const other = await getAiLogsByUserId(999);
+    expect(other).toEqual([]);
   });
 });

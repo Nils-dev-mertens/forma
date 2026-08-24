@@ -11,6 +11,7 @@ import {
   updateAiSessionModel,
   createAiLog,
   getAiTokenUsageByUserSince,
+  getAiLogsByUserId,
   getTemplateByName,
   createTemplate,
 } from "@repo/db";
@@ -87,13 +88,17 @@ function parseAiResponse(text: string): ParsedAiResponse {
   if (jsonText) {
     try {
       const parsed = JSON.parse(jsonText);
-      if (typeof parsed.text === "string" && typeof parsed.html === "string") {
-        const html = parsed.html.trim();
-        return {
-          text: parsed.text.trim(),
-          html: html.startsWith("```") ? extractHtmlBlock(html) : html,
-        };
-      }
+      const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
+      const rawText = typeof parsed.text === "string" ? parsed.text : "";
+      // Unwrap a fenced html block if the model embedded one, otherwise fall
+      // back to pulling an html block out of the raw text so a missing field
+      // never leaks the JSON string into the preview.
+      const html = rawHtml
+        ? rawHtml.startsWith("```")
+          ? extractHtmlBlock(rawHtml)
+          : rawHtml
+        : extractHtmlBlock(text);
+      return { text: rawText, html };
     } catch {
       // Fall back to legacy parsing below.
     }
@@ -443,7 +448,12 @@ router.post("/session/:sessionId/message", async (req, res) => {
     const text = parsed.text || "Generated a template for you.";
     const html = parsed.html;
 
-    await addAiMessage(sessionId, "assistant", text);
+    // Persist the full assistant turn (including the generated HTML) so the
+    // model has real context on the next turn — not just the short description.
+    const assistantContent = html
+      ? `${text}\n\n\`\`\`html\n${html}\n\`\`\``
+      : text;
+    await addAiMessage(sessionId, "assistant", assistantContent);
     await updateAiSessionUpdatedAt(sessionId);
 
     try {
@@ -490,6 +500,31 @@ router.post("/session/:sessionId/message", async (req, res) => {
     return res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to send AI message",
     });
+  }
+});
+
+/**
+ * @openapi
+ * /api/ai/logs:
+ *   get:
+ *     summary: List the user's AI request logs
+ *     tags: [AI]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200: { description: List of AI logs }
+ *       401: { description: Unauthorized }
+ */
+router.get("/logs", async (req, res) => {
+  try {
+    const userId = requireUserId(res);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const logs = await getAiLogsByUserId(userId, { limit: 100 });
+    return res.json({ success: true, logs });
+  } catch (error) {
+    logger.error({ message: "Failed to get AI logs", error: error as Error });
+    return res.status(500).json({ error: "Failed to get AI logs" });
   }
 });
 

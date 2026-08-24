@@ -36,6 +36,7 @@ const navItems = [
   { to: "/templates", label: "Templates" },
   { to: "/profile", label: "Profile" },
   { to: "/ai", label: "AI Studio" },
+  { to: "/ai-logs", label: "AI Logs" },
 ]
 
 function Navigation() {
