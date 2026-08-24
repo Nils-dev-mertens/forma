@@ -248,6 +248,7 @@ export async function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         context_template_name TEXT,
+        model TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -312,6 +313,19 @@ export async function initializeDatabase() {
     }
 
     db.run(`CREATE INDEX IF NOT EXISTS ai_logs_user_id_idx ON ai_logs(user_id);`);
+
+    // Migrate: add model column to existing ai_sessions tables.
+    try {
+      const existingSessionColumns = sqlite
+        .query("PRAGMA table_info(ai_sessions)")
+        .all() as Array<{ name: string }>;
+      const sessionColumnNames = new Set(existingSessionColumns.map((c) => c.name));
+      if (!sessionColumnNames.has("model")) {
+        db.run(`ALTER TABLE ai_sessions ADD COLUMN model TEXT;`);
+      }
+    } catch (error) {
+      console.warn("Could not migrate ai_sessions model column:", error);
+    }
 
     console.log('Database initialized and tables created');
   } catch (error) {

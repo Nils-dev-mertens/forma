@@ -12,6 +12,16 @@ export function isSupportedProvider(value: string): value is SupportedProvider {
   return (SUPPORTED_PROVIDERS as string[]).includes(value);
 }
 
+// Curated model allowlist per provider. Users may only pick from these (plus
+// any future providers we add); free-form model strings are rejected.
+export const SUPPORTED_MODELS: Record<SupportedProvider, string[]> = {
+  openai: ["gpt-4o-mini", "gpt-4o", "o3-mini"],
+};
+
+export function isSupportedModel(provider: SupportedProvider, model: string): boolean {
+  return (SUPPORTED_MODELS[provider] ?? []).includes(model);
+}
+
 const PROVIDERS: Record<SupportedProvider, (apiKey: string, model: string) => LanguageModel> = {
   openai: (apiKey: string, model: string) => createOpenAI({ apiKey })(model),
 };
@@ -25,6 +35,7 @@ export interface GenerateOptions {
   userId: number;
   system: string;
   messages: AiMessage[];
+  model?: string | null;
 }
 
 /**
@@ -40,19 +51,29 @@ function toModelMessages(messages: AiMessage[]): ModelMessage[] {
   );
 }
 
-function getModel(provider: SupportedProvider, apiKey: string): LanguageModel {
+function getModel(provider: SupportedProvider, apiKey: string, model: string): LanguageModel {
   const factory = PROVIDERS[provider];
   if (!factory) {
     throw new Error(`Unsupported AI provider: ${provider}`);
   }
-  return factory(apiKey, aiDefaultModel);
+  return factory(apiKey, model);
+}
+
+export interface ResolvedModel {
+  model: string;
+  languageModel: LanguageModel;
 }
 
 /**
  * Load the user's stored AI key, decrypt it, and return a Vercel AI SDK model.
+ * If `requestedModel` is provided and allowed for the user's provider it is
+ * used; otherwise the configured AI_DEFAULT_MODEL is used as a fallback.
  * Defaults to OpenAI. Throws if no key is configured.
  */
-export async function getModelForUser(userId: number): Promise<LanguageModel> {
+export async function getModelForUser(
+  userId: number,
+  requestedModel?: string | null,
+): Promise<ResolvedModel> {
   const keyRecord = await getAiKeyByUserId(userId);
   if (!keyRecord) {
     throw new Error("AI provider key not configured. Set one via POST /api/ai/key");
@@ -60,8 +81,12 @@ export async function getModelForUser(userId: number): Promise<LanguageModel> {
 
   const apiKey = decrypt(keyRecord.encryptedKey);
   const provider = keyRecord.provider as SupportedProvider;
+  const model =
+    requestedModel && isSupportedModel(provider, requestedModel)
+      ? requestedModel
+      : aiDefaultModel;
 
-  return getModel(provider, apiKey);
+  return { model, languageModel: getModel(provider, apiKey, model) };
 }
 
 export interface GenerationResult {
@@ -69,19 +94,22 @@ export interface GenerationResult {
   inputTokens: number | undefined;
   outputTokens: number | undefined;
   totalTokens: number | undefined;
+  model: string;
 }
 
 /**
  * Generate a text response from the configured provider using the given system
  * prompt and chat messages. Returns the text plus token usage so callers can
- * enforce budgets and log costs.
+ * enforce budgets and log costs. `options.model` selects the model for this
+ * generation (validated against the provider allowlist; falls back to the
+ * server default when unsupported), and the actually-used model is returned.
  */
 export async function generateFromProvider(
   options: GenerateOptions,
 ): Promise<GenerationResult> {
-  const model = await getModelForUser(options.userId);
+  const { model, languageModel } = await getModelForUser(options.userId, options.model);
   const { text, usage } = await generateText({
-    model,
+    model: languageModel,
     system: options.system,
     messages: toModelMessages(options.messages),
   });
@@ -90,6 +118,7 @@ export async function generateFromProvider(
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
     totalTokens: usage?.totalTokens,
+    model,
   };
 }
 

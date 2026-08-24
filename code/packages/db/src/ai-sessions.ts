@@ -5,12 +5,14 @@ import { eq, asc } from "drizzle-orm";
 export async function createAiSession(
   userId: number,
   contextTemplateName?: string | null,
+  model?: string | null,
 ): Promise<AiSession> {
   const result = await db
     .insert(aiSessions)
     .values({
       userId,
       contextTemplateName: contextTemplateName ?? null,
+      model: model ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as NewAiSession)
@@ -19,6 +21,17 @@ export async function createAiSession(
     throw new Error("Failed to create AI session");
   }
   return result[0];
+}
+
+export async function updateAiSessionModel(
+  sessionId: number,
+  model: string | null,
+): Promise<void> {
+  await db
+    .update(aiSessions)
+    .set({ model, updatedAt: new Date() })
+    .where(eq(aiSessions.id, sessionId))
+    .run();
 }
 
 export async function getAiSessionById(sessionId: number): Promise<AiSession | null> {

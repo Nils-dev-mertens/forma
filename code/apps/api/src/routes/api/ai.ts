@@ -8,6 +8,7 @@ import {
   getAiMessagesBySessionId,
   addAiMessage,
   updateAiSessionUpdatedAt,
+  updateAiSessionModel,
   createAiLog,
   getAiTokenUsageByUserSince,
   getTemplateByName,
@@ -15,7 +16,7 @@ import {
 } from "@repo/db";
 import { logger } from "@repo/logger";
 import { encrypt } from "../../utils/crypto.ts";
-import { generateFromProvider, validateRawAiKey, type AiMessage, isSupportedProvider } from "../../services/ai/provider.ts";
+import { generateFromProvider, validateRawAiKey, type AiMessage, isSupportedProvider, isSupportedModel } from "../../services/ai/provider.ts";
 import { loadSystemPrompt } from "../../services/ai/prompts.ts";
 import { getTemplate, saveTemplate } from "@repo/storage";
 import { requireUserId } from "../../utils/auth.ts";
@@ -237,17 +238,18 @@ router.get("/key", async (req, res) => {
  *     tags: [AI]
  *     security:
  *       - apiKey: []
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               contextTemplateName: { type: string, example: "badge.html" }
- *     responses:
- *       201: { description: Session created }
- *       401: { description: Unauthorized }
- */
+     *     requestBody:
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               contextTemplateName: { type: string, example: "badge.html" }
+     *               model: { type: string, example: "gpt-4o" }
+     *     responses:
+     *       201: { description: Session created }
+     *       401: { description: Unauthorized }
+     */
 router.post("/session", async (req, res) => {
   try {
     const userId = requireUserId(res);
@@ -263,11 +265,82 @@ router.post("/session", async (req, res) => {
       contextTemplateName = body.contextTemplateName;
     }
 
-    const session = await createAiSession(userId, contextTemplateName);
-    return res.status(201).json({ success: true, sessionId: session.id });
+    const model = isNonEmptyString(body.model) ? body.model : null;
+
+    const session = await createAiSession(userId, contextTemplateName, model);
+    return res.status(201).json({ success: true, sessionId: session.id, model: session.model });
   } catch (error) {
     logger.error({ message: "Failed to create AI session", error: error as Error });
     return res.status(500).json({ error: "Failed to create AI session" });
+  }
+});
+
+/**
+ * @openapi
+ * /api/ai/session/{sessionId}:
+ *   patch:
+ *     summary: Set the AI model used for a session
+ *     tags: [AI]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [model]
+ *             properties:
+ *               model: { type: string, example: "gpt-4o" }
+ *     responses:
+ *       200: { description: Model updated }
+ *       400: { description: Invalid model }
+ *       401: { description: Unauthorized }
+ *       404: { description: Session not found }
+ */
+router.patch("/session/:sessionId", async (req, res) => {
+  const userId = requireUserId(res);
+  const sessionId = Number(req.params.sessionId);
+  try {
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!Number.isInteger(sessionId)) {
+      return res.status(400).json({ error: "Invalid sessionId" });
+    }
+
+    const session = await getAiSessionById(sessionId);
+    if (!session || session.userId !== userId) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const body = isRecord(req.body) ? req.body : {};
+    if (body.model === undefined) {
+      return res.status(400).json({ error: "model is required" });
+    }
+
+    // Empty model string clears the selection, falling back to AI_DEFAULT_MODEL.
+    const requestedModel = isNonEmptyString(body.model) ? body.model : null;
+    if (requestedModel === null) {
+      await updateAiSessionModel(sessionId, null);
+      return res.json({ success: true, model: null });
+    }
+
+    const keyRecord = await getAiKeyByUserId(userId);
+    const provider = (keyRecord?.provider ?? "openai") as "openai";
+    if (!isSupportedModel(provider, requestedModel)) {
+      return res.status(400).json({ error: "Unsupported model for this provider" });
+    }
+
+    await updateAiSessionModel(sessionId, requestedModel);
+    return res.json({ success: true, model: requestedModel });
+  } catch (error) {
+    logger.error({ message: "Failed to update AI session model", error: error as Error });
+    return res.status(500).json({ error: "Failed to update AI session model" });
   }
 });
 
@@ -363,6 +436,7 @@ router.post("/session/:sessionId/message", async (req, res) => {
       userId,
       system,
       messages: [...previousMessages, { role: "user", content: userPrompt }],
+      model: session.model,
     });
 
     const parsed = parseAiResponse(generation.text);
@@ -377,7 +451,7 @@ router.post("/session/:sessionId/message", async (req, res) => {
         userId,
         sessionId,
         provider,
-        model: aiDefaultModel,
+        model: generation.model,
         system,
         prompt: userPrompt,
         response: generation.text,
@@ -403,7 +477,7 @@ router.post("/session/:sessionId/message", async (req, res) => {
           userId,
           sessionId,
           provider,
-          model: aiDefaultModel,
+          model: session.model ?? aiDefaultModel,
           system,
           prompt: userPrompt,
           status: "error",

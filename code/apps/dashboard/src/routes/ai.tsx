@@ -9,7 +9,9 @@ import {
   saveTemplate,
   sendMessage,
   storeAiKey,
+  updateAiSessionModel,
   validateHtml,
+  AI_MODELS,
   ApiError,
 } from "@/lib/api";
 
@@ -57,6 +59,7 @@ function wrapHtmlForPreview(html: string): string {
 
 function AiTemplatePage() {
   const [sessionId, setSessionId] = useState<number | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [saveName, setSaveName] = useState("");
@@ -91,12 +94,29 @@ function AiTemplatePage() {
     mutationFn: () => createAiSession(),
     onSuccess: (data) => {
       setSessionId(data.sessionId);
+      setSelectedModel(data.model ?? "");
       setSaveError(null);
     },
     onError: (error) => {
       setSaveError(error instanceof ApiError ? error.message : "Failed to create chat session");
     },
   });
+
+  const updateModelMutation = useMutation({
+    mutationFn: ({ sessionId, model }: { sessionId: number; model: string }) =>
+      updateAiSessionModel(sessionId, model),
+    onSuccess: (data) => {
+      setSelectedModel(data.model ?? "");
+    },
+  });
+
+  function handleModelChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const model = event.target.value;
+    setSelectedModel(model);
+    if (sessionId !== null) {
+      void updateModelMutation.mutateAsync({ sessionId, model });
+    }
+  }
 
   useEffect(() => {
     if (keyStatus?.configured && sessionId === null) {
@@ -281,11 +301,34 @@ function AiTemplatePage() {
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
           <Card className="flex min-h-0 flex-col">
             <CardHeader>
-              <CardTitle>Chat</CardTitle>
-              <CardDescription>
-                Describe the template you want. The AI returns HTML and you can
-                refine it conversationally.
-              </CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Chat</CardTitle>
+                  <CardDescription>
+                    Describe the template you want. The AI returns HTML and you can
+                    refine it conversationally.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="model" className="text-xs font-medium text-muted-foreground">
+                    Model
+                  </label>
+                  <select
+                    id="model"
+                    value={selectedModel}
+                    onChange={handleModelChange}
+                    disabled={sessionId === null}
+                    className="rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="">Server default</option>
+                    {AI_MODELS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
               <div

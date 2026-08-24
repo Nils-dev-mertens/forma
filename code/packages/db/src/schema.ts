@@ -119,6 +119,7 @@ export const aiSessions = sqliteTable('ai_sessions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   contextTemplateName: text('context_template_name'), // existing template being edited, if any
+  model: text('model'), // selected model for this session; null = use AI_DEFAULT_MODEL
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
