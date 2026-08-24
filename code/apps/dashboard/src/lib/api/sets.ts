@@ -29,10 +29,17 @@ export interface Set {
   updatedAt: string;
 }
 
+export interface EntryImage {
+  name: string;
+  template?: string;
+  generationData?: string;
+}
+
 export interface Entry {
   id: number;
   setId: number;
   data: Record<string, unknown>;
+  images?: EntryImage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -61,6 +68,7 @@ export async function createSet(payload: {
 export async function updateSet(
   setId: number,
   payload: {
+    name?: string;
     description?: string | null;
     fields?: SetField[];
     templates?: string[];
@@ -79,8 +87,14 @@ export async function deleteSet(setId: number): Promise<{ success: true }> {
   });
 }
 
-export async function getEntries(setId: number): Promise<{ success: true; entries: Entry[] }> {
-  return apiFetch<{ success: true; entries: Entry[] }>(`/api/set/${setId}/entry`);
+export async function getEntries(
+  setId: number,
+  options?: { withImages?: boolean },
+): Promise<{ success: true; entries: Entry[] }> {
+  const query = options?.withImages ? "?withImages=true" : "";
+  return apiFetch<{ success: true; entries: Entry[] }>(
+    `/api/set/${setId}/entry${query}`,
+  );
 }
 
 export async function createEntry(

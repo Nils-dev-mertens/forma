@@ -72,6 +72,7 @@ interface CreateSetInput {
 }
 
 interface UpdateSetInput {
+  name?: string;
   description?: string | null;
   fields?: SetField[];
   templates?: SetTemplateNames;
@@ -80,6 +81,7 @@ interface UpdateSetInput {
 
 function serialize(input: CreateSetInput | UpdateSetInput) {
   return {
+    name: "name" in input && input.name ? input.name : undefined,
     description: "description" in input ? input.description ?? null : undefined,
     fields: "fields" in input && input.fields ? JSON.stringify(input.fields) : undefined,
     templates: "templates" in input && input.templates ? JSON.stringify(input.templates) : undefined,

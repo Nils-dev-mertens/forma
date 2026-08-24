@@ -112,7 +112,12 @@ async function validateTemplateFieldCoverage(
       errors.push({ template, missing: ["<template file not found>"] });
       continue;
     }
-    const missing = getTemplateFields(content).filter((f) => !fieldNames.has(f));
+    // `profile.*` placeholders are filled automatically from the user's brand
+    // profile at render time, so they must NOT be declared as set fields. Only
+    // template-specific (entry) placeholders are required to be covered.
+    const missing = getTemplateFields(content)
+      .filter((f) => !f.startsWith("profile."))
+      .filter((f) => !fieldNames.has(f));
     if (missing.length > 0) errors.push({ template, missing });
   }
   return errors;
@@ -410,6 +415,7 @@ router.get("/:setId", async (req, res) => {
  *             type: object
  *             properties:
  *               description: { type: string }
+ *               name: { type: string }
  *               fields:
  *                 type: array
  *                 items:
@@ -458,11 +464,18 @@ router.patch("/:setId", async (req, res) => {
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
     const patch: {
+      name?: string;
       description?: string | null;
       fields?: SetField[];
       templates?: string[];
       triggers?: SetTriggers;
     } = {};
+    if (req.body?.name !== undefined) {
+      if (typeof req.body.name !== "string" || req.body.name.trim() === "") {
+        return res.status(400).json({ error: "name must be a non-empty string" });
+      }
+      patch.name = req.body.name.trim();
+    }
     if (req.body?.description !== undefined) {
       patch.description =
         typeof req.body.description === "string" ? req.body.description : null;

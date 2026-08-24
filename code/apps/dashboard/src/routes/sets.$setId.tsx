@@ -1,9 +1,13 @@
-import { useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { createEntry, deleteEntry, getEntries, getSet } from "@/lib/api/sets";
+import { createEntry, deleteEntry, getEntries, getSet, updateEntry, updateSet, deleteSet } from "@/lib/api/sets";
+import { getTemplates } from "@/lib/api/templates";
+import { buildProfilePreviewData, getUser, type Profile } from "@/lib/api/profile";
+import { useAuth } from "@/lib/auth";
+import { TemplatePreview } from "@/components/TemplatePreview";
 
 export const Route = createFileRoute("/sets/$setId")({ component: SetDetailPage });
 
@@ -11,8 +15,15 @@ function SetDetailPage() {
   const { setId } = Route.useParams();
   const setIdNumber = Number(setId);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<Record<string, string>>({});
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [setName, setSetName] = useState("");
+  const [setDescription, setSetDescription] = useState("");
+
+  const { user } = useAuth();
 
   const { data: setData, isLoading: setLoading } = useQuery({
     queryKey: ["set", setIdNumber],
@@ -21,13 +32,39 @@ function SetDetailPage() {
 
   const { data: entriesData, isLoading: entriesLoading } = useQuery({
     queryKey: ["entries", setIdNumber],
-    queryFn: () => getEntries(setIdNumber),
+    queryFn: () => getEntries(setIdNumber, { withImages: true }),
   });
+
+  const { data: userData } = useQuery({
+    queryKey: ["user", user?.id],
+    queryFn: () => getUser(user!.id),
+    enabled: !!user?.id,
+  });
+
+  const { data: templatesData } = useQuery({
+    queryKey: ["templates"],
+    queryFn: () => getTemplates(),
+  });
+
+  // Sample/prop data for the live preview: the user's profile fills
+  // `{{ profile.* }}` placeholders, and the entry form values fill the
+  // template-specific placeholders. This is what makes the template-specific
+  // `{{ }}` render even before an entry is saved.
+  const profile = userData?.user.profile ?? (null as Profile | null);
+  const previewData: Record<string, string> = {
+    ...buildProfilePreviewData(profile),
+    ...formData,
+  };
+  const templateContents =
+    templatesData?.templates.filter((t) =>
+      setData?.set.templates.includes(t.name),
+    ) ?? [];
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => createEntry(setIdNumber, data),
     onSuccess: () => {
       setFormData({});
+      setEditingEntryId(null);
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ["entries", setIdNumber] });
     },
@@ -36,10 +73,59 @@ function SetDetailPage() {
     },
   });
 
+  const updateEntryMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      updateEntry(setIdNumber, editingEntryId!, data),
+    onSuccess: () => {
+      setFormData({});
+      setEditingEntryId(null);
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["entries", setIdNumber] });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to update entry");
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (entryId: number) => deleteEntry(setIdNumber, entryId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["entries", setIdNumber] });
+    },
+  });
+
+  // Keep the set-settings inputs in sync with the loaded set.
+  useEffect(() => {
+    if (setData?.set) {
+      setSetName(setData.set.name);
+      setSetDescription(setData.set.description ?? "");
+    }
+  }, [setData]);
+
+  const updateSetMutation = useMutation({
+    mutationFn: () =>
+      updateSet(setIdNumber, {
+        name: setName.trim(),
+        description: setDescription.trim(),
+      }),
+    onSuccess: () => {
+      setSettingsError(null);
+      void queryClient.invalidateQueries({ queryKey: ["set", setIdNumber] });
+      void queryClient.invalidateQueries({ queryKey: ["sets"] });
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : "Failed to update set");
+    },
+  });
+
+  const deleteSetMutation = useMutation({
+    mutationFn: () => deleteSet(setIdNumber),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["sets"] });
+      void navigate({ to: "/sets" });
+    },
+    onError: (err) => {
+      setSettingsError(err instanceof Error ? err.message : "Failed to delete set");
     },
   });
 
@@ -53,7 +139,30 @@ function SetDetailPage() {
         data[field.fieldname] = data[field.fieldname] === "true";
       }
     }
-    createMutation.mutate(data);
+    if (editingEntryId !== null) {
+      updateEntryMutation.mutate(data);
+    } else {
+      createMutation.mutate(data);
+    }
+  }
+
+  function startEditEntry(entry: { id: number; data: Record<string, unknown> }) {
+    const next: Record<string, string> = {};
+    for (const field of setData?.set.fields ?? []) {
+      const value = entry.data[field.fieldname];
+      if (value === undefined) continue;
+      next[field.fieldname] =
+        field.type === "boolean" ? (value ? "true" : "false") : String(value);
+    }
+    setFormData(next);
+    setEditingEntryId(entry.id);
+    setError(null);
+  }
+
+  function cancelEditEntry() {
+    setFormData({});
+    setEditingEntryId(null);
+    setError(null);
   }
 
   const fields = setData?.set.fields ?? [];
@@ -73,7 +182,31 @@ function SetDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Add entry</CardTitle>
+          <CardTitle>Live preview</CardTitle>
+          <CardDescription>
+            Shows the template with your profile values and the entry fields filled
+            in below. Empty fields render blank.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {templateContents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No template content to preview.
+            </p>
+          ) : (
+            templateContents.map((template) => (
+              <div key={template.name} className="flex flex-col gap-1">
+                <label className="text-sm font-medium">{template.name}</label>
+                <TemplatePreview html={template.content} data={previewData} />
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{editingEntryId !== null ? "Edit entry" : "Add entry"}</CardTitle>
           <CardDescription>Fill in the declared fields for this set.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -115,10 +248,24 @@ function SetDetailPage() {
               ))
             )}
             {fields.length > 0 && (
-              <div>
-                <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Adding..." : "Add entry"}
+              <div className="flex items-center gap-2">
+                <Button
+                  type="submit"
+                  disabled={createMutation.isPending || updateEntryMutation.isPending}
+                >
+                  {editingEntryId !== null
+                    ? updateEntryMutation.isPending
+                      ? "Saving..."
+                      : "Save changes"
+                    : createMutation.isPending
+                      ? "Adding..."
+                      : "Add entry"}
                 </Button>
+                {editingEntryId !== null && (
+                  <Button type="button" variant="outline" onClick={cancelEditEntry}>
+                    Cancel
+                  </Button>
+                )}
               </div>
             )}
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -142,22 +289,109 @@ function SetDetailPage() {
                   key={entry.id}
                   className="flex items-start justify-between rounded-lg border bg-card p-4 shadow-sm"
                 >
-                  <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap text-xs">
-                    {JSON.stringify(entry.data, null, 2)}
-                  </pre>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="ml-4 shrink-0"
-                    onClick={() => deleteMutation.mutate(entry.id)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
+                  <div className="min-w-0 flex-1">
+                    <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
+                      {JSON.stringify(entry.data, null, 2)}
+                    </pre>
+                    {entry.images && entry.images.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {entry.images.map((img) => {
+                          let templateName = img.template;
+                          if (!templateName && img.generationData) {
+                            try {
+                              templateName = JSON.parse(img.generationData).template;
+                            } catch {
+                              templateName = undefined;
+                            }
+                          }
+                          return (
+                            <div key={img.name} className="flex flex-col gap-1">
+                              <img
+                                src={`/api/photos/${img.name}`}
+                                alt={templateName ?? img.name}
+                                className="h-auto w-48 rounded-md border border-input bg-white"
+                              />
+                              {templateName ? (
+                                <span className="text-xs text-muted-foreground">
+                                  {templateName}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        No rendered images yet.
+                      </p>
+                    )}
+                  </div>
+                  <div className="ml-4 flex shrink-0 flex-col gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startEditEntry(entry)}
+                      disabled={editingEntryId === entry.id}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => deleteMutation.mutate(entry.id)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Set settings</CardTitle>
+          <CardDescription>Update this set's name or description, or delete it.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <input
+            value={setName}
+            onChange={(e) => setSetName(e.target.value)}
+            placeholder="Set name"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <input
+            value={setDescription}
+            onChange={(e) => setSetDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={() => updateSetMutation.mutate()}
+              disabled={updateSetMutation.isPending || !setName.trim()}
+            >
+              {updateSetMutation.isPending ? "Saving..." : "Save set"}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                if (confirm("Delete this set and all its entries and images?")) {
+                  deleteSetMutation.mutate();
+                }
+              }}
+              disabled={deleteSetMutation.isPending}
+            >
+              {deleteSetMutation.isPending ? "Deleting..." : "Delete set"}
+            </Button>
+          </div>
+          {settingsError && <p className="text-sm text-destructive">{settingsError}</p>}
         </CardContent>
       </Card>
     </div>
