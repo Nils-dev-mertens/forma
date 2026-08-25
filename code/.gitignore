@@ -30,6 +30,10 @@ out/
 build
 dist
 
+# Astro generated types
+.astro/
+**/.astro/
+
 
 # Debug
 npm-debug.log*

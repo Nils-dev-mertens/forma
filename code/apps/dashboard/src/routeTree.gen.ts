@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as AiLogsRouteImport } from './routes/ai-logs'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -34,11 +33,6 @@ const AiRoute = AiRouteImport.update({
 const AiLogsRoute = AiLogsRouteImport.update({
   id: '/ai-logs',
   path: '/ai-logs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -81,7 +75,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/ai-logs': typeof AiLogsRoute
-  '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
@@ -94,7 +87,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/ai-logs': typeof AiLogsRoute
-  '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
@@ -108,7 +100,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/ai-logs': typeof AiLogsRoute
-  '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
@@ -123,7 +114,6 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/ai-logs'
-    | '/dashboard'
     | '/login'
     | '/onboarding'
     | '/register'
@@ -136,7 +126,6 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/ai-logs'
-    | '/dashboard'
     | '/login'
     | '/onboarding'
     | '/register'
@@ -149,7 +138,6 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/ai-logs'
-    | '/dashboard'
     | '/login'
     | '/onboarding'
     | '/register'
@@ -163,7 +151,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AiRoute: typeof AiRoute
   AiLogsRoute: typeof AiLogsRoute
-  DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
   RegisterRoute: typeof RegisterRoute
@@ -194,13 +181,6 @@ declare module '@tanstack/react-router' {
       path: '/ai-logs'
       fullPath: '/ai-logs'
       preLoaderRoute: typeof AiLogsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -259,7 +239,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AiRoute: AiRoute,
   AiLogsRoute: AiLogsRoute,
-  DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
   RegisterRoute: RegisterRoute,

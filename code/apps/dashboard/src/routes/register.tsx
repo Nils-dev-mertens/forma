@@ -18,7 +18,7 @@ function RegisterPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      navigate({ to: user.onboardingCompleted ? "/dashboard" : "/onboarding" })
+      navigate({ to: user.onboardingCompleted ? "/" : "/onboarding" })
     }
   }, [user, authLoading, navigate])
 

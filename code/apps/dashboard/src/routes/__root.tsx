@@ -22,7 +22,7 @@ export const Route = createRootRoute({
     <main className="container mx-auto flex min-h-svh flex-col items-center justify-center p-4 text-center">
       <h1 className="text-4xl font-semibold">404</h1>
       <p className="text-muted-foreground">The requested page could not be found.</p>
-      <Link to="/dashboard" className="mt-4 text-primary hover:underline">
+      <Link to="/" className="mt-4 text-primary hover:underline">
         Go to dashboard
       </Link>
     </main>
@@ -31,7 +31,7 @@ export const Route = createRootRoute({
 })
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard" },
+  { to: "/", label: "Dashboard" },
   { to: "/sets", label: "Sets" },
   { to: "/templates", label: "Templates" },
   { to: "/profile", label: "Profile" },
@@ -46,7 +46,7 @@ function Navigation() {
     <nav className="border-b bg-card px-4 py-3">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-6">
-          <Link to="/dashboard" className="text-lg font-semibold tracking-tight">
+          <Link to="/" className="text-lg font-semibold tracking-tight">
             Forma
           </Link>
           <ul className="hidden flex-wrap items-center gap-1 text-sm font-medium md:flex">

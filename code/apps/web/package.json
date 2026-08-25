@@ -1,0 +1,19 @@
+{
+  "name": "web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host --port 3005",
+    "build": "astro build",
+    "preview": "astro preview --host --port 3005",
+    "check": "astro check",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "astro": "^7.2.6"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^6.0.0"
+  }
+}

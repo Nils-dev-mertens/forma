@@ -19,7 +19,7 @@ function OnboardingPage() {
       if (!user) {
         navigate({ to: "/login" })
       } else if (user.onboardingCompleted) {
-        navigate({ to: "/dashboard" })
+        navigate({ to: "/" })
       }
     }
   }, [user, authLoading, navigate])

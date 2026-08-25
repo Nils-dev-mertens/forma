@@ -88,7 +88,8 @@ This makes Forma useful as a pipeline, not just a one-off generator.
 ## Tech Stack
 
 ### Frontend
-- React.
+- **Landing page:** Astro (static, served at `/`).
+- **Dashboard app:** React + TanStack Start (SSR), mounted under `/dashboard`.
 - TypeScript.
 - Tailwind CSS.
 - Vite.

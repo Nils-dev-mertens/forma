@@ -1,0 +1,168 @@
+---
+import Layout from "../layouts/Layout.astro"
+
+const features = [
+  {
+    title: "Sets",
+    description:
+      "Organize records with flexible fields and feed them straight into your generation pipeline.",
+  },
+  {
+    title: "Templates",
+    description:
+      "Build reusable HTML content for rendering. Compose once, generate everywhere.",
+  },
+  {
+    title: "AI Studio",
+    description:
+      "Generate images and copy with AI, powered by your brand profile and data sets.",
+  },
+  {
+    title: "Brand profiles",
+    description:
+      "Keep brand colors, logos, and social links in one place for consistent output.",
+  },
+]
+---
+
+<Layout>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand">Forma</a>
+      <nav class="nav">
+        <a href="/#features" class="muted">Features</a>
+        <a href="/dashboard/" class="btn btn-primary">Open app</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main">
+    <section class="hero">
+      <p class="eyebrow">Brand-asset pipeline</p>
+      <h1>Generate on-brand assets from your data.</h1>
+      <p class="lead muted">
+        Forma turns HTML templates and structured data into images and copy with
+        AI. Manage templates, data sets, and brand profiles in one workspace.
+      </p>
+      <div class="cta">
+        <a href="/dashboard/" class="btn btn-primary">Get started</a>
+        <a href="/dashboard/login" class="btn btn-outline">Log in</a>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      {
+        features.map((feature) => (
+          <article class="card">
+            <h3>{feature.title}</h3>
+            <p class="muted">{feature.description}</p>
+          </article>
+        ))
+      }
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span class="muted">© {new Date().getFullYear()} Forma</span>
+    </div>
+  </footer>
+</Layout>
+
+<style>
+  .site-header {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+
+  .brand {
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    font-size: 0.95rem;
+  }
+
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4rem;
+    padding-block: 4rem 5rem;
+  }
+
+  .hero {
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .eyebrow {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary);
+  }
+
+  .hero h1 {
+    margin: 0;
+    font-size: clamp(2.25rem, 5vw, 3.5rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+  }
+
+  .lead {
+    margin: 0;
+    font-size: 1.15rem;
+    line-height: 1.6;
+  }
+
+  .cta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .features {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    background: var(--background);
+  }
+
+  .card h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+  }
+
+  .card p {
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding-block: 1.5rem;
+    font-size: 0.9rem;
+  }
+</style>

@@ -69,14 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }) => {
     await completeOnboarding(data);
     setUser((prev) => (prev ? { ...prev, onboardingCompleted: true } : prev));
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/" });
   };
 
   function redirectAfterAuth(user: AuthUser) {
     if (!user.onboardingCompleted) {
       navigate({ to: "/onboarding" });
     } else {
-      navigate({ to: "/dashboard" });
+      navigate({ to: "/" });
     }
   }
 
