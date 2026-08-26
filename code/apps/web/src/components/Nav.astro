@@ -1,0 +1,62 @@
+<header class="border-b-[3px] border-b-ink">
+  <div class="container flex items-center justify-between py-[18px] max-lg:px-5 max-sm:py-3.5">
+    <a href="/" class="flex items-center gap-3 shrink-0">
+      <span class="w-[38px] h-[38px] bg-ink text-paper flex items-center justify-center font-black text-2xl max-sm:w-[34px] max-sm:h-[34px] max-sm:text-xl">F</span>
+      <span class="font-black text-[22px] tracking-[1px] max-sm:text-[18px]">FORMA</span>
+      <span class="bg-accent border-2 border-ink px-2 py-[3px] font-mono text-[10px] font-bold max-sm:hidden">V1.2</span>
+    </a>
+    <nav class="hidden lg:flex gap-[34px] items-center">
+      <a href="#pipeline" class="font-mono text-[13px] transition-opacity duration-150 hover:opacity-60">TEMPLATES</a>
+      <a href="#features" class="font-mono text-[13px] transition-opacity duration-150 hover:opacity-60">LIBRARY</a>
+      <a href="/dashboard/" class="font-mono text-[13px] transition-opacity duration-150 hover:opacity-60">API</a>
+    </nav>
+    <div class="flex gap-[18px] items-center max-sm:gap-3">
+      <span class="flex gap-2 items-center max-sm:hidden">
+        <span class="w-2 h-2 bg-accent rounded-full"></span>
+        <span class="font-mono text-[10px] tracking-[1.5px] opacity-60">PIPELINE ONLINE</span>
+      </span>
+      <a href="/dashboard/" class="bg-accent border-[3px] border-ink px-5 py-3 font-mono text-[13px] font-bold shadow-[4px_4px_0_var(--ink)] transition-[box-shadow,transform] duration-150 hover:shadow-[2px_2px_0_var(--ink)] hover:translate-x-[2px] hover:translate-y-[2px] max-sm:px-3.5 max-sm:py-2.5 max-sm:text-xs">START FREE →</a>
+      <button
+        id="nav-toggle"
+        type="button"
+        aria-label="Toggle menu"
+        aria-expanded="false"
+        aria-controls="mobile-menu"
+        class="lg:hidden w-[42px] h-[42px] shrink-0 bg-ink text-paper flex items-center justify-center font-mono text-lg leading-none"
+      >☰</button>
+    </div>
+  </div>
+  <div id="mobile-menu" class="hidden lg:hidden bg-paper border-t-[3px] border-t-ink">
+    <div class="container flex flex-col max-lg:px-5 py-3">
+      <a href="#pipeline" class="py-2.5 font-mono text-[13px] transition-opacity duration-150 hover:opacity-60">TEMPLATES</a>
+      <a href="#features" class="py-2.5 font-mono text-[13px] transition-opacity duration-150 hover:opacity-60">LIBRARY</a>
+      <a href="/dashboard/" class="py-2.5 font-mono text-[13px] transition-opacity duration-150 hover:opacity-60">API</a>
+      <span class="flex gap-2 items-center pt-2 pb-1">
+        <span class="w-2 h-2 bg-accent rounded-full"></span>
+        <span class="font-mono text-[10px] tracking-[1.5px] opacity-60">PIPELINE ONLINE</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<script>
+  const toggle = document.getElementById("nav-toggle")
+  const menu = document.getElementById("mobile-menu")
+  if (toggle && menu) {
+    const close = () => {
+      menu.classList.add("hidden")
+      toggle.setAttribute("aria-expanded", "false")
+      toggle.textContent = "☰"
+    }
+    toggle.addEventListener("click", () => {
+      if (!menu.classList.contains("hidden")) {
+        close()
+      } else {
+        menu.classList.remove("hidden")
+        toggle.setAttribute("aria-expanded", "true")
+        toggle.textContent = "✕"
+      }
+    })
+    menu.querySelectorAll("a").forEach((link) => link.addEventListener("click", close))
+  }
+</script>
