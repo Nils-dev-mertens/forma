@@ -56,6 +56,18 @@ export const templates = sqliteTable('templates', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
+// Template version history. Every create/update snapshots the template's
+// content into a new row (version increments per template). Rollback copies a
+// chosen version's content back into `templates.content` as a new version.
+export const templateVersions = sqliteTable('template_versions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  templateId: integer('template_id').notNull().references(() => templates.id),
+  version: integer('version').notNull(),
+  content: text('content').notNull(),
+  note: text('note'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
 // Sets table - a configurable collection of dynamic entries.
 // fields:    JSON array of { fieldname, type, required? } field declarations.
 // templates: JSON array of template names attached to the set (>=1 enforced at API layer).
@@ -209,6 +221,14 @@ export const templatesRelations = relations(templates, ({ one, many }) => ({
     references: [users.id],
   }),
   images: many(images),
+  versions: many(templateVersions),
+}));
+
+export const templateVersionsRelations = relations(templateVersions, ({ one }) => ({
+  template: one(templates, {
+    fields: [templateVersions.templateId],
+    references: [templates.id],
+  }),
 }));
 
 export const imagesRelations = relations(images, ({ one }) => ({
@@ -270,6 +290,8 @@ export type AppData = typeof appData.$inferSelect;
 export type NewAppData = typeof appData.$inferInsert;
 export type Template = typeof templates.$inferSelect;
 export type NewTemplate = typeof templates.$inferInsert;
+export type TemplateVersion = typeof templateVersions.$inferSelect;
+export type NewTemplateVersion = typeof templateVersions.$inferInsert;
 export type Image = typeof images.$inferSelect;
 export type NewImage = typeof images.$inferInsert;
 export type Set = typeof sets.$inferSelect;

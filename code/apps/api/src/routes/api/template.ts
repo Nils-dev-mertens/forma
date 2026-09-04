@@ -6,9 +6,23 @@ import { Router } from "express";
 import { readFile } from "fs/promises";
 import multer from "multer";
 import path from "path";
-import { createTemplate, getTemplateByName, getTemplatesByUserId } from "@repo/db";
+import {
+  createTemplate,
+  getTemplateByName,
+  getTemplatesByUserId,
+  getTemplateVersions,
+  getTemplateVersion,
+  getLatestTemplateVersionNumber,
+  addTemplateVersion,
+  snapshotCurrentTemplateVersion,
+  updateTemplateContent,
+} from "@repo/db";
 
 const router: Router = Router();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 const tempDir = path.resolve(process.cwd(), "../../local-blob-storage/temp");
 
@@ -229,6 +243,174 @@ router.get("/fields/:template", async (req, res) => {
         res.status(500).json({
             error: "Failed to upload template",
         });
+    }
+});
+
+function isTemplateRecord(value: unknown): value is { userId: number } {
+    return typeof value === "object" && value !== null && "userId" in value;
+}
+
+/**
+ * @openapi
+ * /api/template/{name}:
+ *   put:
+ *     summary: Update a template's content (records a new version)
+ *     tags: [Templates]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content: { type: string }
+ *               note: { type: string }
+ *     responses:
+ *       200: { description: Template updated, new version recorded }
+ *       400: { description: content required }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.put("/:name", async (req, res) => {
+    try {
+        const name = req.params.name;
+        const userId = res.locals.user?.id;
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+        const body = isRecord(req.body) ? req.body : {};
+        if (typeof body.content !== "string" || body.content.trim() === "") {
+            return res.status(400).json({ error: "content is required" });
+        }
+
+        const template = await getTemplateByName(userId, name);
+        if (!template || template.userId !== userId) {
+            return res.status(403).json({ error: "Template not found or access denied" });
+        }
+
+        // Append-only history: record the new content as a new version.
+        const nextVersion = (await getLatestTemplateVersionNumber(template.id)) + 1;
+        await addTemplateVersion(
+            template.id,
+            nextVersion,
+            body.content,
+            typeof body.note === "string" ? body.note : "update",
+        );
+        await updateTemplateContent(template.id, body.content);
+        await saveTemplate(name, body.content);
+
+        return res.json({ success: true, version: nextVersion, updatedAt: new Date().toISOString() });
+    } catch (error) {
+        logger.error({ message: "Failed to update template", error: error instanceof Error ? { message: error.message, stack: error.stack } : error });
+        return res.status(500).json({ error: "Failed to update template", detail: error instanceof Error ? error.message : String(error) });
+    }
+});
+
+/**
+ * @openapi
+ * /api/template/{name}/versions:
+ *   get:
+ *     summary: List a template's version history
+ *     tags: [Templates]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Version list }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ */
+router.get("/:name/versions", async (req, res) => {
+    try {
+        const name = req.params.name;
+        const userId = res.locals.user?.id;
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+        const template = await getTemplateByName(userId, name);
+        if (!template || template.userId !== userId) {
+            return res.status(403).json({ error: "Template not found or access denied" });
+        }
+
+        const versions = await getTemplateVersions(template.id);
+        return res.json({
+            success: true,
+            versions: versions.map((v) => ({
+                id: v.id,
+                version: v.version,
+                note: v.note,
+                createdAt: v.createdAt,
+            })),
+        });
+    } catch (error) {
+        logger.error({ message: "Failed to list template versions", error: error as Error });
+        return res.status(500).json({ error: "Failed to list template versions" });
+    }
+});
+
+/**
+ * @openapi
+ * /api/template/{name}/versions/{version}/restore:
+ *   post:
+ *     summary: Restore a template to a previous version (records a new version)
+ *     tags: [Templates]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: version
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Template restored }
+ *       400: { description: Invalid version }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Version not found }
+ */
+router.post("/:name/versions/:version/restore", async (req, res) => {
+    try {
+        const name = req.params.name;
+        const userId = res.locals.user?.id;
+        if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+        const version = Number(req.params.version);
+        if (!Number.isInteger(version) || version <= 0) {
+            return res.status(400).json({ error: "Invalid version" });
+        }
+
+        const template = await getTemplateByName(userId, name);
+        if (!template || template.userId !== userId) {
+            return res.status(403).json({ error: "Template not found or access denied" });
+        }
+
+        const target = await getTemplateVersion(template.id, version);
+        if (!target) {
+            return res.status(404).json({ error: "Version not found" });
+        }
+
+        // Snapshot the current (to-be-replaced) content, then restore.
+        await snapshotCurrentTemplateVersion(template.id, `restore to v${version}`);
+        await updateTemplateContent(template.id, target.content);
+        await saveTemplate(name, target.content);
+
+        return res.json({ success: true, restoredVersion: version, updatedAt: new Date().toISOString() });
+    } catch (error) {
+        logger.error({ message: "Failed to restore template version", error: error as Error });
+        return res.status(500).json({ error: "Failed to restore template version" });
     }
 });
 

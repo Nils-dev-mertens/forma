@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getTemplates, uploadTemplate } from "@/lib/api/templates";
+import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/templates/")({ component: TemplatesPage });
 
@@ -84,10 +85,12 @@ function TemplatesPage() {
                   key={template.id}
                   className="rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-muted/50"
                 >
-                  <p className="font-medium">{template.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(template.createdAt).toLocaleDateString()}
-                  </p>
+                  <Link to="/templates/$name" params={{ name: template.name }}>
+                    <p className="font-medium">{template.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(template.createdAt).toLocaleDateString()}
+                    </p>
+                  </Link>
                 </li>
               ))}
             </ul>

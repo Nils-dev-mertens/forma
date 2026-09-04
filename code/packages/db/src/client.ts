@@ -93,6 +93,22 @@ export async function initializeDatabase() {
       );
     `);
 
+    // Create template_versions table (history + rollback for templates).
+    db.run(`
+      CREATE TABLE IF NOT EXISTS template_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        note TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (template_id) REFERENCES templates(id)
+      );
+    `);
+    db.run(
+      `CREATE INDEX IF NOT EXISTS template_versions_template_id_idx ON template_versions(template_id);`,
+    );
+
     // Create images table
     db.run(`
       CREATE TABLE IF NOT EXISTS images (

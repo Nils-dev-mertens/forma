@@ -19,6 +19,7 @@ import { Route as ProfileIndexRouteImport } from './routes/profile.index'
 import { Route as SetsIndexRouteImport } from './routes/sets.index'
 import { Route as SetsSetIdRouteImport } from './routes/sets.$setId'
 import { Route as TemplatesIndexRouteImport } from './routes/templates.index'
+import { Route as TemplatesNameRouteImport } from './routes/templates.$name'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,6 +71,11 @@ const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
   path: '/templates/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesNameRoute = TemplatesNameRouteImport.update({
+  id: '/templates/$name',
+  path: '/templates/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
   '/sets/$setId': typeof SetsSetIdRoute
+  '/templates/$name': typeof TemplatesNameRoute
   '/profile/': typeof ProfileIndexRoute
   '/sets/': typeof SetsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
   '/sets/$setId': typeof SetsSetIdRoute
+  '/templates/$name': typeof TemplatesNameRoute
   '/profile': typeof ProfileIndexRoute
   '/sets': typeof SetsIndexRoute
   '/templates': typeof TemplatesIndexRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
   '/sets/$setId': typeof SetsSetIdRoute
+  '/templates/$name': typeof TemplatesNameRoute
   '/profile/': typeof ProfileIndexRoute
   '/sets/': typeof SetsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/register'
     | '/sets/$setId'
+    | '/templates/$name'
     | '/profile/'
     | '/sets/'
     | '/templates/'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/register'
     | '/sets/$setId'
+    | '/templates/$name'
     | '/profile'
     | '/sets'
     | '/templates'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/register'
     | '/sets/$setId'
+    | '/templates/$name'
     | '/profile/'
     | '/sets/'
     | '/templates/'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   RegisterRoute: typeof RegisterRoute
   SetsSetIdRoute: typeof SetsSetIdRoute
+  TemplatesNameRoute: typeof TemplatesNameRoute
   ProfileIndexRoute: typeof ProfileIndexRoute
   SetsIndexRoute: typeof SetsIndexRoute
   TemplatesIndexRoute: typeof TemplatesIndexRoute
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/templates/$name': {
+      id: '/templates/$name'
+      path: '/templates/$name'
+      fullPath: '/templates/$name'
+      preLoaderRoute: typeof TemplatesNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -243,6 +263,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   RegisterRoute: RegisterRoute,
   SetsSetIdRoute: SetsSetIdRoute,
+  TemplatesNameRoute: TemplatesNameRoute,
   ProfileIndexRoute: ProfileIndexRoute,
   SetsIndexRoute: SetsIndexRoute,
   TemplatesIndexRoute: TemplatesIndexRoute,

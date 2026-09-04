@@ -40,3 +40,42 @@ export async function uploadTemplate(file: File): Promise<TemplateUploadResponse
 export async function getTemplateFields(filename: string): Promise<{ success: true; fields: string[] }> {
   return apiFetch<{ success: true; fields: string[] }>(`/api/template/fields/${encodeURIComponent(filename)}`);
 }
+
+export interface TemplateVersion {
+  id: number;
+  version: number;
+  note: string | null;
+  createdAt: string;
+}
+
+export async function getTemplateVersions(
+  name: string,
+): Promise<{ success: true; versions: TemplateVersion[] }> {
+  return apiFetch<{ success: true; versions: TemplateVersion[] }>(
+    `/api/template/${encodeURIComponent(name)}/versions`,
+  );
+}
+
+export async function updateTemplate(
+  name: string,
+  content: string,
+  note?: string,
+): Promise<{ success: true; version: number; updatedAt: string }> {
+  return apiFetch<{ success: true; version: number; updatedAt: string }>(
+    `/api/template/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(note ? { content, note } : { content }),
+    },
+  );
+}
+
+export async function restoreTemplateVersion(
+  name: string,
+  version: number,
+): Promise<{ success: true; restoredVersion: number; updatedAt: string }> {
+  return apiFetch<{ success: true; restoredVersion: number; updatedAt: string }>(
+    `/api/template/${encodeURIComponent(name)}/versions/${version}/restore`,
+    { method: "POST" },
+  );
+}
