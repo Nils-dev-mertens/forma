@@ -145,12 +145,22 @@ async function buildGenerationInput(
     }
   }
 
-  return {
+  const input: TemplateGenerationInput = {
     templatename: templateName,
     withdpx: widthPx,
     heightpx: heightPx,
     data: { records },
   };
+
+  logger.info({
+    message: "Workflow: buildGenerationInput",
+    templateName,
+    withdpx: input.withdpx,
+    heightpx: input.heightpx,
+    recordKeys: Object.keys(records),
+  });
+
+  return input;
 }
 
 async function executeTemplateNode(
@@ -161,6 +171,15 @@ async function executeTemplateNode(
   const templateName = config.templateName as string;
   const widthPx = (config.widthPx as number) ?? 1200;
   const heightPx = (config.heightPx as number) ?? 800;
+
+  logger.info({
+    message: "Workflow: executing template node",
+    nodeId: node.nodeId,
+    templateName,
+    widthPx,
+    heightPx,
+    config,
+  });
 
   if (!templateName) {
     return {

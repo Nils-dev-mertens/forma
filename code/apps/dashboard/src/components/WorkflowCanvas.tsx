@@ -220,6 +220,12 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
         config: JSON.stringify((n.data as any).config ?? {}),
       }));
 
+      console.log("Saving workflow nodes:", dbNodes.map(n => ({
+        nodeId: n.nodeId,
+        type: n.type,
+        config: JSON.parse(n.config),
+      })));
+
       const dbEdges: WorkflowEdgeData[] = edges.map((e) => ({
         edgeId: e.id,
         sourceNodeId: e.source,
