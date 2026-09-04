@@ -19,6 +19,7 @@ import { Route as ProfileIndexRouteImport } from './routes/profile.index'
 import { Route as SetsIndexRouteImport } from './routes/sets.index'
 import { Route as SetsSetIdRouteImport } from './routes/sets.$setId'
 import { Route as TemplatesIndexRouteImport } from './routes/templates.index'
+import { Route as PlatformTemplatesIndexRouteImport } from './routes/platform-templates.index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,6 +71,11 @@ const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
   path: '/templates/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlatformTemplatesIndexRoute = PlatformTemplatesIndexRouteImport.update({
+  id: '/platform-templates/',
+  path: '/platform-templates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/profile/': typeof ProfileIndexRoute
   '/sets/': typeof SetsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
+  '/platform-templates/': typeof PlatformTemplatesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileIndexRoute
   '/sets': typeof SetsIndexRoute
   '/templates': typeof TemplatesIndexRoute
+  '/platform-templates': typeof PlatformTemplatesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/profile/': typeof ProfileIndexRoute
   '/sets/': typeof SetsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
+  '/platform-templates/': typeof PlatformTemplatesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/profile/'
     | '/sets/'
     | '/templates/'
+    | '/platform-templates/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/sets'
     | '/templates'
+    | '/platform-templates'
   id:
     | '__root__'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/profile/'
     | '/sets/'
     | '/templates/'
+    | '/platform-templates/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +170,7 @@ export interface RootRouteChildren {
   ProfileIndexRoute: typeof ProfileIndexRoute
   SetsIndexRoute: typeof SetsIndexRoute
   TemplatesIndexRoute: typeof TemplatesIndexRoute
+  PlatformTemplatesIndexRoute: typeof PlatformTemplatesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform-templates/': {
+      id: '/platform-templates/'
+      path: '/platform-templates'
+      fullPath: '/platform-templates/'
+      preLoaderRoute: typeof PlatformTemplatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileIndexRoute: ProfileIndexRoute,
   SetsIndexRoute: SetsIndexRoute,
   TemplatesIndexRoute: TemplatesIndexRoute,
+  PlatformTemplatesIndexRoute: PlatformTemplatesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
