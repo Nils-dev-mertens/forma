@@ -12,6 +12,7 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  applyEdgeChanges,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -34,7 +35,7 @@ const nodeTypes: NodeTypes = {
 // Connection rules
 const NODE_RULES: Record<string, { maxInputs: number; maxOutputs: number; validTargets: string[] }> = {
   record: { maxInputs: 0, maxOutputs: 2, validTargets: ["template", "destination", "delete"] },
-  template: { maxInputs: 1, maxOutputs: 99, validTargets: ["destination"] },
+  template: { maxInputs: 2, maxOutputs: 99, validTargets: ["destination"] },
   destination: { maxInputs: 99, maxOutputs: 0, validTargets: [] },
   delete: { maxInputs: 0, maxOutputs: 99, validTargets: ["destination"] },
 };
@@ -146,16 +147,7 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
 
   const handleEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      setEdges((eds) => {
-        const next = [...eds];
-        for (const change of changes) {
-          if (change.type === "remove") {
-            const idx = next.findIndex((e) => e.id === change.id);
-            if (idx !== -1) next.splice(idx, 1);
-          }
-        }
-        return next;
-      });
+      setEdges((eds) => applyEdgeChanges(changes, eds));
     },
     [setEdges],
   );

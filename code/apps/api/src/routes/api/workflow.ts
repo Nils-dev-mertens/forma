@@ -76,7 +76,7 @@ interface NodeTypeInfo {
 
 const NODE_RULES: Record<string, NodeTypeInfo> = {
   record:     { maxInputs: 0, maxOutputs: 2, validTargets: ["template", "destination", "delete"] },
-  template:   { maxInputs: 1, maxOutputs: 99, validTargets: ["destination"] },
+  template:   { maxInputs: 2, maxOutputs: 99, validTargets: ["destination"] },
   destination: { maxInputs: 99, maxOutputs: 0, validTargets: [] },
   delete:     { maxInputs: 0, maxOutputs: 99, validTargets: ["destination"] },
 };
