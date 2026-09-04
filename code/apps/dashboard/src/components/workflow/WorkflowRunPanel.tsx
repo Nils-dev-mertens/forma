@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getWorkflowRun, type WorkflowNodeResult } from "@/lib/api/sets";
+import { cn } from "@/lib/utils";
 
 interface WorkflowRunPanelProps {
   setId: number;
@@ -28,7 +29,6 @@ export function WorkflowRunPanel({ setId }: WorkflowRunPanelProps) {
     queryKey: ["workflowRun", setId],
     queryFn: () => getWorkflowRun(setId),
     refetchInterval: (query) => {
-      // Auto-refresh while run is in progress
       const run = query.state.data?.run;
       if (run && run.status === "running") return 2000;
       return false;
@@ -37,7 +37,7 @@ export function WorkflowRunPanel({ setId }: WorkflowRunPanelProps) {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border p-4">
+      <div className="rounded-xl ring-1 ring-foreground/10 p-4">
         <p className="text-sm text-muted-foreground">Loading run history...</p>
       </div>
     );
@@ -48,23 +48,26 @@ export function WorkflowRunPanel({ setId }: WorkflowRunPanelProps) {
 
   if (!run) {
     return (
-      <div className="rounded-lg border p-4">
+      <div className="rounded-xl ring-1 ring-foreground/10 p-4">
         <p className="text-sm text-muted-foreground">No runs yet. Add or edit an entry to trigger the workflow.</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border">
-      <div className="flex items-center justify-between border-b p-4">
+    <div className="rounded-xl ring-1 ring-foreground/10">
+      <div className="flex items-center justify-between border-b px-4 py-3">
         <div>
-          <h4 className="font-medium">Latest Run</h4>
+          <h4 className="text-sm font-medium">Latest Run</h4>
           <p className="text-xs text-muted-foreground">
             {run.event} · {new Date(run.startedAt).toLocaleString()}
             {run.completedAt && ` → ${new Date(run.completedAt).toLocaleString()}`}
           </p>
         </div>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[run.status] ?? ""}`}>
+        <span className={cn(
+          "rounded-full px-2.5 py-0.5 text-xs font-medium",
+          STATUS_COLORS[run.status]
+        )}>
           {STATUS_LABELS[run.status] ?? run.status}
         </span>
       </div>
@@ -84,47 +87,25 @@ export function WorkflowRunPanel({ setId }: WorkflowRunPanelProps) {
 }
 
 function NodeResultCard({ result }: { result: WorkflowNodeResult }) {
-  const statusColor = STATUS_COLORS[result.status] ?? "";
-  const payload = result.payload ? JSON.parse(result.payload) : null;
-  const response = result.response ? JSON.parse(result.response) : null;
+  const isOk = result.status === "success";
 
   return (
-    <div className="rounded-md border bg-card p-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{result.nodeId}</span>
-          <span className="text-xs text-muted-foreground">({result.type})</span>
-        </div>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusColor}`}>
-          {result.status}
-        </span>
+    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
+      <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            "h-2 w-2 rounded-full",
+            isOk ? "bg-green-500" : "bg-red-500"
+          )}
+        />
+        <span className="font-medium">{result.type}</span>
+        <span className="text-xs text-muted-foreground">({result.nodeId})</span>
       </div>
-
-      {result.error && (
-        <p className="mt-1 text-xs text-destructive">{result.error}</p>
-      )}
-
-      {payload && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            Payload
-          </summary>
-          <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-[10px]">
-            {JSON.stringify(payload, null, 2)}
-          </pre>
-        </details>
-      )}
-
-      {response && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            Response
-          </summary>
-          <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-[10px]">
-            {JSON.stringify(response, null, 2)}
-          </pre>
-        </details>
-      )}
+      <div className="text-right">
+        {result.error && (
+          <span className="text-xs text-red-500">{result.error}</span>
+        )}
+      </div>
     </div>
   );
 }

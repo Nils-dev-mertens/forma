@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { TemplatePreview } from "@/components/TemplatePreview";
 import { WorkflowCanvas } from "@/components/WorkflowCanvas";
 import { WorkflowRunPanel } from "@/components/workflow/WorkflowRunPanel";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/sets/$setId")({ component: SetDetailPage });
 
@@ -32,6 +33,7 @@ function SetDetailPage() {
   const [newHookModify, setNewHookModify] = useState(false);
   const [hookError, setHookError] = useState<string | null>(null);
   const [hookTest, setHookTest] = useState<string | null>(null);
+  const [rightPanelRatio, setRightPanelRatio] = useState<"1/2" | "1/3" | "2/3">("1/2");
 
   const { user } = useAuth();
 
@@ -267,334 +269,362 @@ function SetDetailPage() {
   const fields = setData?.set.fields ?? [];
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
-      {setLoading ? (
-        <p className="text-sm text-muted-foreground">Loading set...</p>
-      ) : setData?.set ? (
-        <div>
-          <h1 className="text-xl font-semibold">{setData.set.name}</h1>
-          {setData.set.description ? (
-            <p className="text-sm text-muted-foreground">{setData.set.description}</p>
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+      {/* Left panel - inputs/config */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex flex-col gap-4">
+          {setLoading ? (
+            <p className="text-sm text-muted-foreground">Loading set...</p>
+          ) : setData?.set ? (
+            <div>
+              <h1 className="text-xl font-semibold">{setData.set.name}</h1>
+              {setData.set.description ? (
+                <p className="text-sm text-muted-foreground">{setData.set.description}</p>
+              ) : null}
+            </div>
           ) : null}
-        </div>
-      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Live preview</CardTitle>
-          <CardDescription>
-            Shows the template with your profile values and the entry fields filled
-            in below. Empty fields render blank.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {templateContents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No template content to preview.
-            </p>
-          ) : (
-            templateContents.map((template) => (
-              <div key={template.name} className="flex flex-col gap-1">
-                <label className="text-sm font-medium">{template.name}</label>
-                <TemplatePreview html={template.content} data={previewData} />
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Live preview</CardTitle>
+              <CardDescription>
+                Shows the template with your profile values and the entry fields filled
+                in below. Empty fields render blank.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {templateContents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No template content to preview.
+                </p>
+              ) : (
+                templateContents.map((template) => (
+                  <div key={template.name} className="flex flex-col gap-1">
+                    <label className="text-sm font-medium">{template.name}</label>
+                    <TemplatePreview html={template.content} data={previewData} />
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{editingEntryId !== null ? "Edit entry" : "Add entry"}</CardTitle>
-          <CardDescription>Fill in the declared fields for this set.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            {fields.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                This set has no fields declared yet.
-              </p>
-            ) : (
-              fields.map((field) => (
-                <div key={field.fieldname} className="flex flex-col gap-1">
-                  <label className="text-sm font-medium">
-                    {field.fieldname}
-                    {field.required ? <span className="text-destructive">*</span> : null}
-                  </label>
-                  {field.type === "boolean" ? (
-                    <select
-                      value={formData[field.fieldname] ?? "false"}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, [field.fieldname]: e.target.value }))
-                      }
-                      className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  ) : (
-                    <input
-                      type={field.type === "number" ? "number" : "text"}
-                      value={formData[field.fieldname] ?? ""}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, [field.fieldname]: e.target.value }))
-                      }
-                      placeholder={field.fieldname}
-                      className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                  )}
-                </div>
-              ))
-            )}
-            {fields.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Button
-                  type="submit"
-                  disabled={createMutation.isPending || updateEntryMutation.isPending}
-                >
-                  {editingEntryId !== null
-                    ? updateEntryMutation.isPending
-                      ? "Saving..."
-                      : "Save changes"
-                    : createMutation.isPending
-                      ? "Adding..."
-                      : "Add entry"}
-                </Button>
-                {editingEntryId !== null && (
-                  <Button type="button" variant="outline" onClick={cancelEditEntry}>
-                    Cancel
-                  </Button>
-                )}
-              </div>
-            )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Entries</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {entriesLoading ? (
-            <p className="text-sm text-muted-foreground">Loading entries...</p>
-          ) : entriesData?.entries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No entries yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {entriesData?.entries.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="flex items-start justify-between rounded-lg border bg-card p-4 shadow-sm"
-                >
-                  <div className="min-w-0 flex-1">
-                    <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
-                      {JSON.stringify(entry.data, null, 2)}
-                    </pre>
-                    {entry.images && entry.images.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-3">
-                        {entry.images.map((img) => {
-                          let templateName = img.template;
-                          if (!templateName && img.generationData) {
-                            try {
-                              templateName = JSON.parse(img.generationData).template;
-                            } catch {
-                              templateName = undefined;
-                            }
+          <Card>
+            <CardHeader>
+              <CardTitle>{editingEntryId !== null ? "Edit entry" : "Add entry"}</CardTitle>
+              <CardDescription>Fill in the declared fields for this set.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                {fields.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    This set has no fields declared yet.
+                  </p>
+                ) : (
+                  fields.map((field) => (
+                    <div key={field.fieldname} className="flex flex-col gap-1">
+                      <label className="text-sm font-medium">
+                        {field.fieldname}
+                        {field.required ? <span className="text-destructive">*</span> : null}
+                      </label>
+                      {field.type === "boolean" ? (
+                        <select
+                          value={formData[field.fieldname] ?? "false"}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, [field.fieldname]: e.target.value }))
                           }
-                          return (
-                            <div key={img.name} className="flex flex-col gap-1">
-                              <img
-                                src={`/api/photos/${img.name}`}
-                                alt={templateName ?? img.name}
-                                className="h-auto w-48 rounded-md border border-input bg-white"
-                              />
-                              {templateName ? (
-                                <span className="text-xs text-muted-foreground">
-                                  {templateName}
-                                </span>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-xs text-muted-foreground">
-                        No rendered images yet.
-                      </p>
+                          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type === "number" ? "number" : "text"}
+                          value={formData[field.fieldname] ?? ""}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, [field.fieldname]: e.target.value }))
+                          }
+                          placeholder={field.fieldname}
+                          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      )}
+                    </div>
+                  ))
+                )}
+                {fields.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="submit"
+                      disabled={createMutation.isPending || updateEntryMutation.isPending}
+                    >
+                      {editingEntryId !== null
+                        ? updateEntryMutation.isPending
+                          ? "Saving..."
+                          : "Save changes"
+                        : createMutation.isPending
+                          ? "Adding..."
+                          : "Add entry"}
+                    </Button>
+                    {editingEntryId !== null && (
+                      <Button type="button" variant="outline" onClick={cancelEditEntry}>
+                        Cancel
+                      </Button>
                     )}
                   </div>
-                  <div className="ml-4 flex shrink-0 flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => startEditEntry(entry)}
-                      disabled={editingEntryId === entry.id}
+                )}
+                {error && <p className="text-sm text-destructive">{error}</p>}
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Entries</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {entriesLoading ? (
+                <p className="text-sm text-muted-foreground">Loading entries...</p>
+              ) : entriesData?.entries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No entries yet.</p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {entriesData?.entries.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex items-start justify-between rounded-lg border bg-card p-4 shadow-sm"
                     >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive"
-                      onClick={() => deleteMutation.mutate(entry.id)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+                      <div className="min-w-0 flex-1">
+                        <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
+                          {JSON.stringify(entry.data, null, 2)}
+                        </pre>
+                        {entry.images && entry.images.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            {entry.images.map((img) => {
+                              let templateName = img.template;
+                              if (!templateName && img.generationData) {
+                                try {
+                                  templateName = JSON.parse(img.generationData).template;
+                                } catch {
+                                  templateName = undefined;
+                                }
+                              }
+                              return (
+                                <div key={img.name} className="flex flex-col gap-1">
+                                  <img
+                                    src={`/api/photos/${img.name}`}
+                                    alt={templateName ?? img.name}
+                                    className="h-auto w-48 rounded-md border border-input bg-white"
+                                  />
+                                  {templateName ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      {templateName}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-muted-foreground">
+                            No rendered images yet.
+                          </p>
+                        )}
+                      </div>
+                      <div className="ml-4 flex shrink-0 flex-col gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => startEditEntry(entry)}
+                          disabled={editingEntryId === entry.id}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => deleteMutation.mutate(entry.id)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Set settings</CardTitle>
-          <CardDescription>Update this set's name or description, or delete it.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <input
-            value={setName}
-            onChange={(e) => setSetName(e.target.value)}
-            placeholder="Set name"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          <input
-            value={setDescription}
-            onChange={(e) => setSetDescription(e.target.value)}
-            placeholder="Description (optional)"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              onClick={() => updateSetMutation.mutate()}
-              disabled={updateSetMutation.isPending || !setName.trim()}
-            >
-              {updateSetMutation.isPending ? "Saving..." : "Save set"}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                if (confirm("Delete this set and all its entries and images?")) {
-                  deleteSetMutation.mutate();
-                }
-              }}
-              disabled={deleteSetMutation.isPending}
-            >
-              {deleteSetMutation.isPending ? "Deleting..." : "Delete set"}
-            </Button>
-          </div>
-          {settingsError && <p className="text-sm text-destructive">{settingsError}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow</CardTitle>
-          <CardDescription>
-            Drag-to-connect visual workflow. Record node triggers on entry add/edit, flows through templates, and sends to destinations.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <WorkflowCanvas setId={setIdNumber} />
-          <WorkflowRunPanel setId={setIdNumber} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Export hooks</CardTitle>
-          <CardDescription>
-            Send the rendered images somewhere after an entry is added or modified.
-            Webhook (HTTP POST) is supported now; email and storage are coming next.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {hooks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No export hooks configured.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {hooks.map((hook) => (
-                <li
-                  key={hook.id}
-                  className="flex items-center justify-between rounded-lg border bg-card p-3"
+          <Card>
+            <CardHeader>
+              <CardTitle>Set settings</CardTitle>
+              <CardDescription>Update this set's name or description, or delete it.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <input
+                value={setName}
+                onChange={(e) => setSetName(e.target.value)}
+                placeholder="Set name"
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <input
+                value={setDescription}
+                onChange={(e) => setSetDescription(e.target.value)}
+                placeholder="Description (optional)"
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={() => updateSetMutation.mutate()}
+                  disabled={updateSetMutation.isPending || !setName.trim()}
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium capitalize">{hook.type}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {hook.events.join(", ")}
-                      {hookDisplay[hook.id] ? ` · ${hookDisplay[hook.id]}` : ""}
-                    </p>
-                  </div>
+                  {updateSetMutation.isPending ? "Saving..." : "Save set"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => {
+                    if (confirm("Delete this set and all its entries and images?")) {
+                      deleteSetMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteSetMutation.isPending}
+                >
+                  {deleteSetMutation.isPending ? "Deleting..." : "Delete set"}
+                </Button>
+              </div>
+              {settingsError && <p className="text-sm text-destructive">{settingsError}</p>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Export hooks</CardTitle>
+              <CardDescription>
+                Send the rendered images somewhere after an entry is added or modified.
+                Webhook (HTTP POST) is supported now; email and storage are coming next.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {hooks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No export hooks configured.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {hooks.map((hook) => (
+                    <li
+                      key={hook.id}
+                      className="flex items-center justify-between rounded-lg border bg-card p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium capitalize">{hook.type}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {hook.events.join(", ")}
+                          {hookDisplay[hook.id] ? ` · ${hookDisplay[hook.id]}` : ""}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => removeHook(hook.id)}
+                        disabled={updateHooksMutation.isPending}
+                      >
+                        Remove
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="flex flex-col gap-2 border-t pt-3">
+                <p className="text-sm font-medium">Add webhook</p>
+                <input
+                  value={newHookUrl}
+                  onChange={(e) => setNewHookUrl(e.target.value)}
+                  placeholder="https://example.com/webhook"
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <div className="flex items-center gap-4 text-sm">
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={newHookAdd}
+                      onChange={(e) => setNewHookAdd(e.target.checked)}
+                    />
+                    on add
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={newHookModify}
+                      onChange={(e) => setNewHookModify(e.target.checked)}
+                    />
+                    on modify
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive"
-                    onClick={() => removeHook(hook.id)}
+                    type="button"
+                    onClick={addHook}
                     disabled={updateHooksMutation.isPending}
                   >
-                    Remove
+                    {updateHooksMutation.isPending ? "Saving..." : "Save webhook"}
                   </Button>
-                </li>
-              ))}
-            </ul>
-          )}
+                  <Button type="button" variant="outline" onClick={testSendHook}>
+                    Test send
+                  </Button>
+                </div>
+                {hookTest && <p className="text-xs text-muted-foreground">{hookTest}</p>}
+                {hookError && <p className="text-sm text-destructive">{hookError}</p>}
+              </div>
 
-          <div className="flex flex-col gap-2 border-t pt-3">
-            <p className="text-sm font-medium">Add webhook</p>
-            <input
-              value={newHookUrl}
-              onChange={(e) => setNewHookUrl(e.target.value)}
-              placeholder="https://example.com/webhook"
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <div className="flex items-center gap-4 text-sm">
-              <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={newHookAdd}
-                  onChange={(e) => setNewHookAdd(e.target.checked)}
-                />
-                on add
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={newHookModify}
-                  onChange={(e) => setNewHookModify(e.target.checked)}
-                />
-                on modify
-              </label>
-            </div>
-            <div className="flex items-center gap-2">
+              {hookWarning && (
+                <p className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-xs text-yellow-700">
+                  {hookWarning}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Resize handle */}
+      <div className="w-1 cursor-col-resize bg-border hover:bg-foreground/20 transition-colors" />
+
+      {/* Right panel - workflow canvas */}
+      <div
+        className={cn(
+          "flex flex-col overflow-hidden border-l",
+          rightPanelRatio === "1/3" && "w-1/3",
+          rightPanelRatio === "1/2" && "w-1/2",
+          rightPanelRatio === "2/3" && "w-2/3"
+        )}
+      >
+        <div className="flex items-center justify-between border-b px-4 py-2">
+          <h3 className="text-sm font-medium">Workflow</h3>
+          <div className="flex gap-1">
+            {(["1/3", "1/2", "2/3"] as const).map((ratio) => (
               <Button
-                type="button"
-                onClick={addHook}
-                disabled={updateHooksMutation.isPending}
+                key={ratio}
+                variant={rightPanelRatio === ratio ? "default" : "ghost"}
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setRightPanelRatio(ratio)}
               >
-                {updateHooksMutation.isPending ? "Saving..." : "Save webhook"}
+                {ratio}
               </Button>
-              <Button type="button" variant="outline" onClick={testSendHook}>
-                Test send
-              </Button>
-            </div>
-            {hookTest && <p className="text-xs text-muted-foreground">{hookTest}</p>}
-            {hookError && <p className="text-sm text-destructive">{hookError}</p>}
+            ))}
           </div>
-
-          {hookWarning && (
-            <p className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-xs text-yellow-700">
-              {hookWarning}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          <div className="flex flex-col gap-4">
+            <WorkflowCanvas setId={setIdNumber} />
+            <WorkflowRunPanel setId={setIdNumber} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

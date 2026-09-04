@@ -19,6 +19,7 @@ import "@xyflow/react/dist/style.css";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getWorkflow, saveWorkflow, type WorkflowNodeData, type WorkflowEdgeData } from "@/lib/api/sets";
 import { getTemplates } from "@/lib/api/templates";
+import { Button } from "@/components/ui/button";
 import { RecordNode } from "./workflow/RecordNode";
 import { TemplateNode } from "./workflow/TemplateNode";
 import { DestinationNode } from "./workflow/DestinationNode";
@@ -253,34 +254,37 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => addNode("template", { x: 300, y: 100 })}
-            className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
           >
             + Template
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => addNode("destination", { x: 300, y: 300 })}
-            className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
           >
             + Destination
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => addNode("delete", { x: 50, y: 350 })}
-            className="rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
           >
             + Delete
-          </button>
+          </Button>
         </div>
-        <button
+        <Button
+          size="sm"
           onClick={handleSave}
           disabled={isSaving}
-          className="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {isSaving ? "Saving..." : "Save workflow"}
-        </button>
+        </Button>
       </div>
-      <div className="h-[500px] rounded-lg border bg-muted/10">
+      <div className="h-[500px] rounded-xl ring-1 ring-foreground/10">
         <ReactFlow
           nodes={nodes}
           edges={edges}

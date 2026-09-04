@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { type Node } from "@xyflow/react";
+import { Button } from "@/components/ui/button";
 
 interface NodeConfigPanelProps {
   node: Node | null;
@@ -29,11 +30,11 @@ export function NodeConfigPanel({ node, templates, onClose, onSave }: NodeConfig
   return (
     <div className="fixed right-0 top-0 z-50 h-full w-80 border-l bg-background shadow-lg">
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between border-b p-4">
-          <h3 className="font-semibold capitalize">{nodeType} Config</h3>
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h3 className="text-sm font-medium capitalize">{nodeType} Config</h3>
           <button
             onClick={onClose}
-            className="rounded-md p-1 hover:bg-muted"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             ✕
           </button>
@@ -58,13 +59,10 @@ export function NodeConfigPanel({ node, templates, onClose, onSave }: NodeConfig
           )}
         </div>
 
-        <div className="border-t p-4">
-          <button
-            onClick={handleSave}
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
+        <div className="border-t px-4 py-3">
+          <Button onClick={handleSave} className="w-full">
             Save
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -87,7 +85,7 @@ function TemplateConfig({
         <select
           value={(config.templateName as string) ?? ""}
           onChange={(e) => setConfig({ ...config, templateName: e.target.value })}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <option value="">Select template...</option>
           {templates.map((t) => (
@@ -103,7 +101,7 @@ function TemplateConfig({
             type="number"
             value={(config.widthPx as number) ?? 1200}
             onChange={(e) => setConfig({ ...config, widthPx: parseInt(e.target.value) || 1200 })}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <div>
@@ -112,7 +110,7 @@ function TemplateConfig({
             type="number"
             value={(config.heightPx as number) ?? 800}
             onChange={(e) => setConfig({ ...config, heightPx: parseInt(e.target.value) || 800 })}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
       </div>
@@ -136,7 +134,7 @@ function DestinationConfig({
         <select
           value={destinationType}
           onChange={(e) => setConfig({ ...config, type: e.target.value })}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <option value="webhook">Webhook (HTTP POST)</option>
           <option value="email">Email (SMTP)</option>
@@ -152,7 +150,7 @@ function DestinationConfig({
             value={(config.url as string) ?? ""}
             onChange={(e) => setConfig({ ...config, url: e.target.value })}
             placeholder="https://example.com/webhook"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <div className="mt-2">
             <label className="mb-1 block text-sm font-medium">Custom Headers (JSON)</label>
@@ -160,7 +158,7 @@ function DestinationConfig({
               value={(config.headers as string) ?? "{}"}
               onChange={(e) => setConfig({ ...config, headers: e.target.value })}
               placeholder='{"Authorization": "Bearer token"}'
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
               rows={3}
             />
           </div>
@@ -176,7 +174,7 @@ function DestinationConfig({
               value={(config.smtpHost as string) ?? ""}
               onChange={(e) => setConfig({ ...config, smtpHost: e.target.value })}
               placeholder="smtp.gmail.com"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -186,7 +184,7 @@ function DestinationConfig({
                 type="number"
                 value={(config.smtpPort as number) ?? 587}
                 onChange={(e) => setConfig({ ...config, smtpPort: parseInt(e.target.value) || 587 })}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
             <div>
@@ -194,7 +192,7 @@ function DestinationConfig({
               <select
                 value={(config.encryption as string) ?? "tls"}
                 onChange={(e) => setConfig({ ...config, encryption: e.target.value })}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="tls">TLS</option>
                 <option value="ssl">SSL</option>
@@ -208,7 +206,7 @@ function DestinationConfig({
               type="text"
               value={(config.username as string) ?? ""}
               onChange={(e) => setConfig({ ...config, username: e.target.value })}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div>
@@ -217,7 +215,7 @@ function DestinationConfig({
               type="password"
               value={(config.password as string) ?? ""}
               onChange={(e) => setConfig({ ...config, password: e.target.value })}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div>
@@ -227,7 +225,7 @@ function DestinationConfig({
               value={(config.recipients as string) ?? ""}
               onChange={(e) => setConfig({ ...config, recipients: e.target.value })}
               placeholder="user@example.com, admin@example.com"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div>
@@ -237,7 +235,7 @@ function DestinationConfig({
               value={(config.subject as string) ?? ""}
               onChange={(e) => setConfig({ ...config, subject: e.target.value })}
               placeholder="New image generated for {{ record.name }}"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div>
@@ -246,7 +244,7 @@ function DestinationConfig({
               value={(config.body as string) ?? ""}
               onChange={(e) => setConfig({ ...config, body: e.target.value })}
               placeholder="Generated image for {{ record.name }}..."
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               rows={4}
             />
           </div>
@@ -255,7 +253,7 @@ function DestinationConfig({
             <select
               value={(config.imageDelivery as string) ?? "attachment"}
               onChange={(e) => setConfig({ ...config, imageDelivery: e.target.value })}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="attachment">Attachment</option>
               <option value="inline">Inline</option>
