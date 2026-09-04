@@ -329,6 +329,74 @@ export async function initializeDatabase() {
 
     db.run(`CREATE INDEX IF NOT EXISTS ai_logs_user_id_idx ON ai_logs(user_id);`);
 
+    // Create workflow canvas tables
+    db.run(`
+      CREATE TABLE IF NOT EXISTS workflow_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        set_id INTEGER NOT NULL,
+        node_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        label TEXT,
+        position_x INTEGER NOT NULL DEFAULT 0,
+        position_y INTEGER NOT NULL DEFAULT 0,
+        config TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
+      );
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS workflow_nodes_set_id_idx ON workflow_nodes(set_id);`);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS workflow_edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        set_id INTEGER NOT NULL,
+        edge_id TEXT NOT NULL,
+        source_node_id TEXT NOT NULL,
+        target_node_id TEXT NOT NULL,
+        source_handle TEXT,
+        target_handle TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
+      );
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS workflow_edges_set_id_idx ON workflow_edges(set_id);`);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS workflow_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        set_id INTEGER NOT NULL UNIQUE,
+        entry_id INTEGER,
+        event TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE,
+        FOREIGN KEY (entry_id) REFERENCES entries(id)
+      );
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS workflow_runs_set_id_idx ON workflow_runs(set_id);`);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS workflow_node_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL,
+        node_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        payload TEXT,
+        response TEXT,
+        error TEXT,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        FOREIGN KEY (run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
+      );
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS workflow_node_results_run_id_idx ON workflow_node_results(run_id);`);
+
     // Migrate: add model column to existing ai_sessions tables.
     try {
       const existingSessionColumns = sqlite

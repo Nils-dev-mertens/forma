@@ -8,6 +8,7 @@ import { getTemplates } from "@/lib/api/templates";
 import { buildProfilePreviewData, getUser, type Profile } from "@/lib/api/profile";
 import { useAuth } from "@/lib/auth";
 import { TemplatePreview } from "@/components/TemplatePreview";
+import { WorkflowCanvas } from "@/components/WorkflowCanvas";
 
 export const Route = createFileRoute("/sets/$setId")({ component: SetDetailPage });
 
@@ -489,6 +490,18 @@ function SetDetailPage() {
             </Button>
           </div>
           {settingsError && <p className="text-sm text-destructive">{settingsError}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Workflow</CardTitle>
+          <CardDescription>
+            Drag-to-connect visual workflow. Record node triggers on entry add/edit, flows through templates, and sends to destinations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WorkflowCanvas setId={setIdNumber} />
         </CardContent>
       </Card>
 

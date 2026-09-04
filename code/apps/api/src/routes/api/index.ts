@@ -8,6 +8,7 @@ import keyRoute from "./key"
 import photoRoute from "./photos"
 import userRoute from "./users"
 import setRoute from "./set"
+import workflowRoute from "./workflow"
 import aiRoute from "./ai"
 import authRoute from "./auth"
 
@@ -161,6 +162,7 @@ router.use("/key", keyRoute)
 router.use("/photos", photoRoute)
 router.use("/users", userRoute)
 router.use("/set", setRoute)
+router.use("/set", workflowRoute)
 router.use("/ai", aiRoute)
 router.use("/auth", authRoute)
 

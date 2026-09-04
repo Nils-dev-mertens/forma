@@ -158,3 +158,68 @@ export async function deleteEntry(setId: number, entryId: number): Promise<{ suc
     method: "DELETE",
   });
 }
+
+// ---------- Workflow Canvas ----------
+
+export interface WorkflowNodeData {
+  nodeId: string;
+  type: "record" | "template" | "destination" | "delete";
+  label?: string;
+  positionX: number;
+  positionY: number;
+  config: string; // JSON string
+}
+
+export interface WorkflowEdgeData {
+  edgeId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
+export interface WorkflowRun {
+  id: number;
+  setId: number;
+  entryId: number | null;
+  event: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface WorkflowNodeResult {
+  id: number;
+  runId: number;
+  nodeId: string;
+  type: string;
+  status: string;
+  payload: string | null;
+  response: string | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export async function getWorkflow(
+  setId: number,
+): Promise<{ success: true; nodes: WorkflowNodeData[]; edges: WorkflowEdgeData[] }> {
+  return apiFetch(`/api/set/${setId}/workflow`);
+}
+
+export async function saveWorkflow(
+  setId: number,
+  nodes: WorkflowNodeData[],
+  edges: WorkflowEdgeData[],
+): Promise<{ success: true; nodes: WorkflowNodeData[]; edges: WorkflowEdgeData[] }> {
+  return apiFetch(`/api/set/${setId}/workflow`, {
+    method: "PUT",
+    body: JSON.stringify({ nodes, edges }),
+  });
+}
+
+export async function getWorkflowRun(
+  setId: number,
+): Promise<{ success: true; run: WorkflowRun | null; nodeResults: WorkflowNodeResult[] }> {
+  return apiFetch(`/api/set/${setId}/workflow/run`);
+}
