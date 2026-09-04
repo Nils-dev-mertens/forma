@@ -146,7 +146,7 @@ async function buildGenerationInput(
     templatename: templateName,
     withdpx: widthPx,
     heightpx: heightPx,
-    records,
+    data: { records },
   };
 }
 

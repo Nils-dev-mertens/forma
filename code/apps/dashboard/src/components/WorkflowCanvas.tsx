@@ -160,6 +160,22 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
     [setEdges],
   );
 
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      // Filter out Record node from deletion
+      const protectedNodes = deleted.filter((n) => n.id === "record");
+      if (protectedNodes.length > 0) {
+        // Restore protected nodes
+        setNodes((nds) => {
+          const existing = new Set(nds.map((n) => n.id));
+          const toAdd = protectedNodes.filter((n) => !existing.has(n.id));
+          return [...nds, ...toAdd];
+        });
+      }
+    },
+    [setNodes],
+  );
+
   const addNode = useCallback(
     (type: string, position: { x: number; y: number }) => {
       const id = `${type}_${Date.now()}`;
@@ -176,6 +192,8 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
 
   const removeNode = useCallback(
     (nodeId: string) => {
+      // Don't allow deleting the Record node
+      if (nodeId === "record") return;
       setNodes((nds) => nds.filter((n) => n.id !== nodeId));
       setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
     },
@@ -272,6 +290,7 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onNodeClick={onNodeClick}
+          onNodesDelete={onNodesDelete}
           nodeTypes={nodeTypes}
           fitView
           snapToGrid
@@ -279,6 +298,8 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
           deleteKeyCode={["Backspace", "Delete"]}
           onNodeContextMenu={(event, node) => {
             event.preventDefault();
+            // Don't show delete option for Record node
+            if (node.id === "record") return;
             if (confirm(`Remove ${node.type} node?`)) {
               removeNode(node.id);
             }
