@@ -22,6 +22,7 @@ import { RecordNode } from "./workflow/RecordNode";
 import { TemplateNode } from "./workflow/TemplateNode";
 import { DestinationNode } from "./workflow/DestinationNode";
 import { DeleteNode } from "./workflow/DeleteNode";
+import { NodeConfigPanel } from "./workflow/NodeConfigPanel";
 
 const nodeTypes: NodeTypes = {
   record: RecordNode,
@@ -62,6 +63,7 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges] = useEdgesState<Edge>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
 
   const { data: workflowData, isLoading } = useQuery({
     queryKey: ["workflow", setId],
@@ -180,6 +182,21 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
     [setNodes, setEdges],
   );
 
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
+    setSelectedNode(node);
+  }, []);
+
+  const handleSaveNodeConfig = useCallback(
+    (nodeId: string, config: Record<string, unknown>) => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId ? { ...n, data: { ...n.data, config } } : n,
+        ),
+      );
+    },
+    [setNodes],
+  );
+
   // Save workflow
   const handleSave = useCallback(async () => {
     setIsSaving(true);
@@ -254,6 +271,7 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
           onNodesChange={onNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
+          onNodeClick={onNodeClick}
           nodeTypes={nodeTypes}
           fitView
           snapToGrid
@@ -270,6 +288,13 @@ export function WorkflowCanvas({ setId }: WorkflowCanvasProps) {
           <Background variant={BackgroundVariant.Dots} gap={15} size={1} />
         </ReactFlow>
       </div>
+
+      <NodeConfigPanel
+        node={selectedNode}
+        templates={templates}
+        onClose={() => setSelectedNode(null)}
+        onSave={handleSaveNodeConfig}
+      />
     </div>
   );
 }
