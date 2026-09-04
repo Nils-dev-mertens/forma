@@ -34,6 +34,7 @@ const navItems = [
   { to: "/", label: "Dashboard" },
   { to: "/sets", label: "Sets" },
   { to: "/templates", label: "Templates" },
+  { to: "/platform-templates", label: "Platform" },
   { to: "/profile", label: "Profile" },
   { to: "/ai", label: "AI Studio" },
   { to: "/ai-logs", label: "AI Logs" },

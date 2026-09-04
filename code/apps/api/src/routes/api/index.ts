@@ -10,6 +10,7 @@ import userRoute from "./users"
 import setRoute from "./set"
 import aiRoute from "./ai"
 import authRoute from "./auth"
+import platformTemplatesRoute from "./platform-templates"
 
 const router:Router = Router();
 
@@ -163,5 +164,6 @@ router.use("/users", userRoute)
 router.use("/set", setRoute)
 router.use("/ai", aiRoute)
 router.use("/auth", authRoute)
+router.use("/platform-templates", platformTemplatesRoute)
 
 export default router;
