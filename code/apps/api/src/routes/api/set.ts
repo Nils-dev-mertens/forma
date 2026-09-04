@@ -26,6 +26,7 @@ import {
   validateFields,
   validateTriggers,
   validateHooks,
+  upsertWorkflowNodes,
   DEFAULT_RENDER_DIMENSIONS,
   type SetField,
   type SetTriggers,
@@ -329,6 +330,18 @@ router.post("/", async (req, res) => {
     if (!created) {
       return res.status(409).json({ error: "A set with this name already exists" });
     }
+
+    // Create default workflow with Record node
+    await upsertWorkflowNodes(created.id, [{
+      setId: created.id,
+      nodeId: "record",
+      type: "record",
+      label: "Record",
+      positionX: 50,
+      positionY: 200,
+      config: "{}",
+    }]);
+
     return res.status(201).json({
       success: true,
       set: presentSet(created),
