@@ -9,6 +9,7 @@ import { buildProfilePreviewData, getUser, type Profile } from "@/lib/api/profil
 import { useAuth } from "@/lib/auth";
 import { TemplatePreview } from "@/components/TemplatePreview";
 import { WorkflowCanvas } from "@/components/WorkflowCanvas";
+import { WorkflowRunPanel } from "@/components/workflow/WorkflowRunPanel";
 
 export const Route = createFileRoute("/sets/$setId")({ component: SetDetailPage });
 
@@ -500,8 +501,9 @@ function SetDetailPage() {
             Drag-to-connect visual workflow. Record node triggers on entry add/edit, flows through templates, and sends to destinations.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           <WorkflowCanvas setId={setIdNumber} />
+          <WorkflowRunPanel setId={setIdNumber} />
         </CardContent>
       </Card>
 
