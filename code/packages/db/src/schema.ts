@@ -153,6 +153,63 @@ export const aiLogs = sqliteTable('ai_logs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
 
+// Workflow canvas tables - visual node graph replacing triggers/hooks JSON.
+export const workflowNodes = sqliteTable('workflow_nodes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  setId: integer('set_id').notNull().references(() => sets.id, { onDelete: 'cascade' }),
+  nodeId: text('node_id').notNull(), // React Flow node ID (e.g. "node_1")
+  type: text('type').notNull(), // "record" | "template" | "destination" | "delete"
+  label: text('label'), // display name (e.g. template name)
+  positionX: integer('position_x').notNull().default(0),
+  positionY: integer('position_y').notNull().default(0),
+  config: text('config').notNull().default('{}'), // JSON: type-specific config (templateId, dimensions, destination type, etc.)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+}, (table) => ({
+  setIdIdx: index('workflow_nodes_set_id_idx').on(table.setId),
+}));
+
+export const workflowEdges = sqliteTable('workflow_edges', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  setId: integer('set_id').notNull().references(() => sets.id, { onDelete: 'cascade' }),
+  edgeId: text('edge_id').notNull(), // React Flow edge ID
+  sourceNodeId: text('source_node_id').notNull(), // references workflowNodes.nodeId
+  targetNodeId: text('target_node_id').notNull(),
+  sourceHandle: text('source_handle'), // "new" | "edited" | "output" for Record nodes
+  targetHandle: text('target_handle'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+}, (table) => ({
+  setIdIdx: index('workflow_edges_set_id_idx').on(table.setId),
+}));
+
+// Workflow run history - latest run per workflow, replaced on next run.
+export const workflowRuns = sqliteTable('workflow_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  setId: integer('set_id').notNull().references(() => sets.id, { onDelete: 'cascade' }).unique(),
+  entryId: integer('entry_id').references(() => entries.id),
+  event: text('event').notNull(), // "add" | "modify" | "delete"
+  status: text('status').notNull().default('running'), // "running" | "success" | "partial" | "failed"
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+}, (table) => ({
+  setIdIdx: index('workflow_runs_set_id_idx').on(table.setId),
+}));
+
+// Per-node execution results within a run.
+export const workflowNodeResults = sqliteTable('workflow_node_results', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id').notNull().references(() => workflowRuns.id, { onDelete: 'cascade' }),
+  nodeId: text('node_id').notNull(), // references workflowNodes.nodeId
+  type: text('type').notNull(), // "record" | "template" | "destination" | "delete"
+  status: text('status').notNull().default('pending'), // "pending" | "running" | "success" | "failed" | "skipped"
+  payload: text('payload'), // JSON: input data sent to this node
+  response: text('response'), // JSON: output/result from this node
+  error: text('error'),
+  startedAt: integer('started_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+}, (table) => ({
+  runIdIdx: index('workflow_node_results_run_id_idx').on(table.runId),
+}));
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   apiKeys: many(apiKeys),
@@ -186,6 +243,42 @@ export const setsRelations = relations(sets, ({ one, many }) => ({
     references: [users.id],
   }),
   entries: many(entries),
+  workflowNodes: many(workflowNodes),
+  workflowEdges: many(workflowEdges),
+  workflowRun: one(workflowRuns),
+}));
+
+export const workflowNodesRelations = relations(workflowNodes, ({ one }) => ({
+  set: one(sets, {
+    fields: [workflowNodes.setId],
+    references: [sets.id],
+  }),
+}));
+
+export const workflowEdgesRelations = relations(workflowEdges, ({ one }) => ({
+  set: one(sets, {
+    fields: [workflowEdges.setId],
+    references: [sets.id],
+  }),
+}));
+
+export const workflowRunsRelations = relations(workflowRuns, ({ one, many }) => ({
+  set: one(sets, {
+    fields: [workflowRuns.setId],
+    references: [sets.id],
+  }),
+  entry: one(entries, {
+    fields: [workflowRuns.entryId],
+    references: [entries.id],
+  }),
+  nodeResults: many(workflowNodeResults),
+}));
+
+export const workflowNodeResultsRelations = relations(workflowNodeResults, ({ one }) => ({
+  run: one(workflowRuns, {
+    fields: [workflowNodeResults.runId],
+    references: [workflowRuns.id],
+  }),
 }));
 
 export const entriesRelations = relations(entries, ({ one, many }) => ({
@@ -284,3 +377,11 @@ export type AiMessage = typeof aiMessages.$inferSelect;
 export type NewAiMessage = typeof aiMessages.$inferInsert;
 export type AiLog = typeof aiLogs.$inferSelect;
 export type NewAiLog = typeof aiLogs.$inferInsert;
+export type WorkflowNode = typeof workflowNodes.$inferSelect;
+export type NewWorkflowNode = typeof workflowNodes.$inferInsert;
+export type WorkflowEdge = typeof workflowEdges.$inferSelect;
+export type NewWorkflowEdge = typeof workflowEdges.$inferInsert;
+export type WorkflowRun = typeof workflowRuns.$inferSelect;
+export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
+export type WorkflowNodeResult = typeof workflowNodeResults.$inferSelect;
+export type NewWorkflowNodeResult = typeof workflowNodeResults.$inferInsert;

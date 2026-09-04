@@ -16,6 +16,7 @@ import {
   getTemplateByName,
   linkImageToEntry,
   profileToRecords,
+  getWorkflowNodes,
   DEFAULT_RENDER_DIMENSIONS,
   type Entry,
   type Set,
@@ -26,6 +27,7 @@ import {
 import { logger } from "@repo/logger";
 import { imagePathToDataUrl } from "./imageDataUrls.ts";
 import { fireHooks, type HookFailure } from "./hooks.ts";
+import { fireWorkflow } from "./workflowEngine.ts";
 
 interface TriggerContext {
   userId: number;
@@ -227,11 +229,53 @@ export type SetTriggerEvent = "add" | "modify" | "remove";
  * Generic trigger dispatcher. Reads the trigger config from the set, chooses
  * the right list of templates for the event, then performs the linked
  * side-effect: render, re-render, or delete.
+ *
+ * If a workflow canvas exists for this set, it uses the new execution engine
+ * instead of the legacy trigger system.
  */
 export async function fireTriggers(
   event: SetTriggerEvent,
   ctx: TriggerContext,
 ): Promise<TriggerResult> {
+  // Check if a workflow canvas exists for this set
+  const workflowNodes = await getWorkflowNodes(ctx.set.id);
+  if (workflowNodes.length > 0) {
+    // Use the new workflow execution engine
+    const result = await fireWorkflow({
+      userId: ctx.userId,
+      set: ctx.set,
+      entry: ctx.entry,
+      event,
+    });
+
+    // Map workflow results to the legacy TriggerResult format
+    const rendered = result.nodeResults
+      .filter((r) => r.type === "template" && r.status === "success")
+      .map((r) => {
+        const resp = r.response as { imageName: string } | undefined;
+        return {
+          name: resp?.imageName ?? "unknown",
+          template: (r.payload as { templateName: string })?.templateName ?? "unknown",
+        };
+      });
+
+    const failed = result.nodeResults
+      .filter((r) => r.type === "template" && r.status === "failed")
+      .map((r) => ({
+        templatename: (r.payload as { templateName: string })?.templateName ?? "unknown",
+        reason: r.error ?? "Unknown error",
+      }));
+
+    return {
+      rendered,
+      deleted: [],
+      failed,
+      missing: [],
+      hookFailures: result.hookFailures,
+    };
+  }
+
+  // Legacy trigger system (no workflow canvas)
   if (event === "remove") {
     // On entry deletion we drop every linked image automatically; there is
     // no user-facing remove trigger anymore.
