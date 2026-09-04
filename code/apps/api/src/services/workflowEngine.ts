@@ -11,6 +11,8 @@ import {
   getProfileByUserId,
   profileToRecords,
   getTemplateByName,
+  createImage,
+  linkImageToEntry,
   decodeSetTemplates,
   type Set,
   type Entry,
@@ -18,6 +20,7 @@ import {
   type WorkflowEdge,
 } from "@repo/db";
 import { generateAndStoreImageFromTemplateStrict, type TemplateGenerationInput } from "@repo/generation";
+import { generateRandomName } from "@repo/auth";
 import { logger } from "@repo/logger";
 import { imagePathToDataUrl } from "./imageDataUrls.ts";
 import { fireHooks, type HookFailure } from "./hooks.ts";
@@ -178,16 +181,33 @@ async function executeTemplateNode(
     };
   }
 
+  const imagename = generateRandomName({ length: 12, endsWith: ".png" });
+
   try {
     const input = await buildGenerationInput(ctx.entry, ctx.userId, widthPx, heightPx, templateName);
-    const result = await generateAndStoreImageFromTemplateStrict(input);
+    await generateAndStoreImageFromTemplateStrict(input, imagename);
+
+    // Create image record and link to entry
+    const image = await createImage(
+      ctx.userId,
+      template.id,
+      imagename,
+      {
+        template: templateName,
+        entryId: ctx.entry.id,
+        setId: ctx.set.id,
+      },
+    );
+    if (image) {
+      await linkImageToEntry(image.id, ctx.entry.id);
+    }
 
     return {
       nodeId: node.nodeId,
       type: "template",
       status: "success",
       payload: { templateName, widthPx, heightPx, entryId: ctx.entry.id },
-      response: { imageName: result.name, imagePath: result.path },
+      response: { imageName: imagename },
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
