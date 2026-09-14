@@ -12,7 +12,7 @@ import {
   createAiLog,
   getAiTokenUsageByUserSince,
   getAiLogsByUserId,
-  getTemplateByName,
+  getTemplateByNameForUserIds,
   createTemplate,
 } from "@repo/db";
 import { logger } from "@repo/logger";
@@ -20,7 +20,7 @@ import { encrypt } from "../../utils/crypto.ts";
 import { generateFromProvider, validateRawAiKey, type AiMessage, isSupportedProvider, isSupportedModel } from "../../services/ai/provider.ts";
 import { loadSystemPrompt } from "../../services/ai/prompts.ts";
 import { getTemplate, saveTemplate } from "@repo/storage";
-import { requireUserId } from "../../utils/auth.ts";
+import { requireUserId, getScopedUserIds, canEditContent } from "../../utils/auth.ts";
 import { validateHtml } from "../../utils/html-validation.ts";
 import { aiDefaultModel, aiDailyTokenLimit, nodeEnv } from "../../config.ts";
 
@@ -263,7 +263,7 @@ router.post("/session", async (req, res) => {
     const body = isRecord(req.body) ? req.body : {};
     let contextTemplateName: string | undefined;
     if (isNonEmptyString(body.contextTemplateName)) {
-      const template = await getTemplateByName(userId, body.contextTemplateName);
+      const template = await getTemplateByNameForUserIds(getScopedUserIds(res), body.contextTemplateName);
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
       }
@@ -487,7 +487,7 @@ router.post("/session/:sessionId/message", async (req, res) => {
           userId,
           sessionId,
           provider,
-          model: session.model ?? aiDefaultModel,
+          model: aiDefaultModel,
           system,
           prompt: userPrompt,
           status: "error",
@@ -606,6 +606,7 @@ router.post("/save-template", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot create templates." });
 
     const body = isRecord(req.body) ? req.body : {};
     if (!isNonEmptyString(body.html) || !isNonEmptyString(body.name)) {
@@ -627,7 +628,7 @@ router.post("/save-template", async (req, res) => {
       });
     }
 
-    const existing = await getTemplateByName(userId, name);
+    const existing = await getTemplateByNameForUserIds(getScopedUserIds(res), name);
     if (existing) {
       return res.status(409).json({ error: "Template name already exists" });
     }

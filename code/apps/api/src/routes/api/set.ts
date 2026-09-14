@@ -18,8 +18,8 @@ import {
   getEntryInSet,
   getSetById,
   getSetFields,
-  getSetsByUserId,
-  getTemplateByName,
+  getSetsByUserIds,
+  getTemplateByNameForUserIds,
   getImagesByEntryId,
   updateEntry,
   updateSet,
@@ -33,6 +33,7 @@ import {
   type SetHook,
   type Set,
 } from "@repo/db";
+import { getScopedUserIds, requireUserId, canEditContent } from "../../utils/auth.ts";
 import { fireTriggers, cleanupSetImages, unusedTemplatesForSet } from "../../services/setTriggers.ts";
 import { toDisplayHook, sendWebhook, buildWebhookPayload, reconcileHooks } from "../../services/hooks.ts";
 import { getTemplateFields } from "@repo/generation";
@@ -130,20 +131,15 @@ async function validateTemplateFieldCoverage(
 
 // ---------------- helpers ----------------
 
-function requireUserId(res: Response): number | undefined {
-  const user = (res.locals.user as { id?: number } | undefined);
-  return user?.id;
-}
-
 function parseIntParam(value: string | string[] | undefined): number | undefined {
   if (typeof value !== "string") return undefined;
   const n = Number(value);
   return Number.isInteger(n) ? n : undefined;
 }
 
-async function assertOwnership(userId: number, setId: number) {
+async function assertOwnership(userIds: number[], setId: number) {
   const set = await getSetById(setId);
-  if (!set || set.userId !== userId) {
+  if (!set || !userIds.includes(set.userId)) {
     return { ok: false as const, status: 404, message: "Set not found" };
   }
   return { ok: true as const, set };
@@ -274,6 +270,7 @@ router.post("/", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot create content." });
 
     const { name, description, fields, templates, triggers, hooks } = req.body ?? {};
     if (typeof name !== "string" || name.trim() === "") {
@@ -291,7 +288,7 @@ router.post("/", async (req, res) => {
       if (typeof t !== "string" || t.trim() === "") {
         return res.status(400).json({ error: "every template entry must be a non-empty string" });
       }
-      const owned = await getTemplateByName(userId, t);
+      const owned = await getTemplateByNameForUserIds(getScopedUserIds(res), t);
       if (!owned) {
         return res.status(400).json({ error: `template not found: ${t}` });
       }
@@ -357,7 +354,7 @@ router.get("/", async (req, res) => {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const rows = await getSetsByUserId(userId);
+    const rows = await getSetsByUserIds(getScopedUserIds(res));
     return res.json({
       success: true,
       sets: rows.map((row) => presentSet(row)),
@@ -393,7 +390,7 @@ router.get("/:setId", async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const row = own.set;
     return res.json({
@@ -472,9 +469,10 @@ router.patch("/:setId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
     const patch: {
@@ -507,7 +505,7 @@ router.patch("/:setId", async (req, res) => {
           .json({ error: "templates must contain at least one template name" });
       }
       for (const t of req.body.templates) {
-        const owned = await getTemplateByName(userId, t);
+        const owned = await getTemplateByNameForUserIds(getScopedUserIds(res), t);
         if (!owned) return res.status(400).json({ error: `template not found: ${t}` });
       }
       patch.templates = req.body.templates as string[];
@@ -564,9 +562,10 @@ router.delete("/:setId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
     const { deleted } = await cleanupSetImages(own.set);
@@ -621,9 +620,10 @@ router.post("/:setId/hooks/test", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
     const hook = req.body?.hook;
@@ -703,7 +703,7 @@ router.get("/:setId/fields", async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const { declared, observed } = await getSetFields(setId);
     return res.json({ success: true, declared, observed });
@@ -754,9 +754,10 @@ router.post("/:setId/entry", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
     const data = req.body?.data;
@@ -776,6 +777,7 @@ router.post("/:setId/entry", async (req, res) => {
 
     const triggerResult = await fireTriggers("add", {
       userId,
+      userIds: getScopedUserIds(res),
       set: own.set,
       entry,
     });
@@ -824,7 +826,7 @@ router.get("/:setId/entry", async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const rows = await getEntriesBySetId(setId);
     const wantImages = req.query.withImages === "true" || req.query.withImages === "1";
@@ -876,7 +878,7 @@ router.get("/:setId/entry/:entryId", async (req, res) => {
     if (setId === undefined || entryId === undefined) {
       return res.status(400).json({ error: "Invalid id" });
     }
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const entry = await getEntryInSet(setId, entryId);
     if (!entry) return res.status(404).json({ error: "Entry not found" });
@@ -931,12 +933,13 @@ router.put("/:setId/entry/:entryId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
     const setId = parseIntParam(req.params.setId);
     const entryId = parseIntParam(req.params.entryId);
     if (setId === undefined || entryId === undefined) {
       return res.status(400).json({ error: "Invalid id" });
     }
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const existing = await getEntryInSet(setId, entryId);
     if (!existing) return res.status(404).json({ error: "Entry not found" });
@@ -957,6 +960,7 @@ router.put("/:setId/entry/:entryId", async (req, res) => {
     if (!updated) return res.status(500).json({ error: "Failed to update entry" });
     const triggerResult = await fireTriggers("modify", {
       userId,
+      userIds: getScopedUserIds(res),
       set: own.set,
       entry: updated,
     });
@@ -999,18 +1003,20 @@ router.delete("/:setId/entry/:entryId", async (req, res) => {
   try {
     const userId = requireUserId(res);
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
     const setId = parseIntParam(req.params.setId);
     const entryId = parseIntParam(req.params.entryId);
     if (setId === undefined || entryId === undefined) {
       return res.status(400).json({ error: "Invalid id" });
     }
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
     const existing = await getEntryInSet(setId, entryId);
     if (!existing) return res.status(404).json({ error: "Entry not found" });
 
     const triggerResult = await fireTriggers("remove", {
       userId,
+      userIds: getScopedUserIds(res),
       set: own.set,
       entry: existing,
     });
@@ -1073,12 +1079,13 @@ router.post(
     try {
       const userId = requireUserId(res);
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      if (!canEditContent(res)) return res.status(403).json({ error: "Viewers cannot modify content." });
       const setId = parseIntParam(req.params.setId);
       const entryId = parseIntParam(req.params.entryId);
       if (setId === undefined || entryId === undefined) {
         return res.status(400).json({ error: "Invalid id" });
       }
-      const own = await assertOwnership(userId, setId);
+      const own = await assertOwnership(getScopedUserIds(res), setId);
       if (!own.ok) return res.status(own.status).json({ error: own.message });
       const entry = await getEntryInSet(setId, entryId);
       if (!entry) return res.status(404).json({ error: "Entry not found" });
@@ -1162,6 +1169,7 @@ router.post(
 
       const triggerResult = await fireTriggers("modify", {
         userId,
+        userIds: getScopedUserIds(res),
         set: own.set,
         entry: updated,
       });
@@ -1210,7 +1218,7 @@ router.get("/:setId/images", async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const setId = parseIntParam(req.params.setId);
     if (setId === undefined) return res.status(400).json({ error: "Invalid setId" });
-    const own = await assertOwnership(userId, setId);
+    const own = await assertOwnership(getScopedUserIds(res), setId);
     if (!own.ok) return res.status(own.status).json({ error: own.message });
 
     const entries = await getEntriesBySetId(setId);

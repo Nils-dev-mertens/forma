@@ -3,6 +3,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import {
   getProfileByUserId,
+  getTeamProfileUserId,
   decodeProfileBrandColors,
   decodeProfileSocialLinks,
   decodeProfileCustomData,
@@ -24,7 +25,10 @@ export interface ProfileContext {
 }
 
 export async function buildProfileContext(userId: number): Promise<ProfileContext> {
-  const profile = await getProfileByUserId(userId);
+  // The brand profile is shared team-wide (the team owner's profile is
+  // canonical) so AI-gen templates match the brand for every teammate.
+  const profileUserId = (await getTeamProfileUserId(userId)) ?? userId;
+  const profile = await getProfileByUserId(profileUserId);
   if (!profile) {
     return {
       displayName: "",

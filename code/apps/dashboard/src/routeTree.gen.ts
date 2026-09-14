@@ -18,6 +18,8 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProfileIndexRouteImport } from './routes/profile.index'
 import { Route as SetsIndexRouteImport } from './routes/sets.index'
 import { Route as SetsSetIdRouteImport } from './routes/sets.$setId'
+import { Route as TeamsIndexRouteImport } from './routes/teams.index'
+import { Route as TeamsJoinRouteImport } from './routes/teams.join'
 import { Route as TemplatesIndexRouteImport } from './routes/templates.index'
 
 const IndexRoute = IndexRouteImport.update({
@@ -65,6 +67,16 @@ const SetsSetIdRoute = SetsSetIdRouteImport.update({
   path: '/sets/$setId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TeamsIndexRoute = TeamsIndexRouteImport.update({
+  id: '/teams/',
+  path: '/teams/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeamsJoinRoute = TeamsJoinRouteImport.update({
+  id: '/teams/join',
+  path: '/teams/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
   id: '/templates/',
   path: '/templates/',
@@ -79,8 +91,10 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
   '/sets/$setId': typeof SetsSetIdRoute
+  '/teams/join': typeof TeamsJoinRoute
   '/profile/': typeof ProfileIndexRoute
   '/sets/': typeof SetsIndexRoute
+  '/teams/': typeof TeamsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -91,8 +105,10 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
   '/sets/$setId': typeof SetsSetIdRoute
+  '/teams/join': typeof TeamsJoinRoute
   '/profile': typeof ProfileIndexRoute
   '/sets': typeof SetsIndexRoute
+  '/teams': typeof TeamsIndexRoute
   '/templates': typeof TemplatesIndexRoute
 }
 export interface FileRoutesById {
@@ -104,8 +120,10 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
   '/sets/$setId': typeof SetsSetIdRoute
+  '/teams/join': typeof TeamsJoinRoute
   '/profile/': typeof ProfileIndexRoute
   '/sets/': typeof SetsIndexRoute
+  '/teams/': typeof TeamsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
 }
 export interface FileRouteTypes {
@@ -118,8 +136,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/register'
     | '/sets/$setId'
+    | '/teams/join'
     | '/profile/'
     | '/sets/'
+    | '/teams/'
     | '/templates/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -130,8 +150,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/register'
     | '/sets/$setId'
+    | '/teams/join'
     | '/profile'
     | '/sets'
+    | '/teams'
     | '/templates'
   id:
     | '__root__'
@@ -142,8 +164,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/register'
     | '/sets/$setId'
+    | '/teams/join'
     | '/profile/'
     | '/sets/'
+    | '/teams/'
     | '/templates/'
   fileRoutesById: FileRoutesById
 }
@@ -155,8 +179,10 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   RegisterRoute: typeof RegisterRoute
   SetsSetIdRoute: typeof SetsSetIdRoute
+  TeamsJoinRoute: typeof TeamsJoinRoute
   ProfileIndexRoute: typeof ProfileIndexRoute
   SetsIndexRoute: typeof SetsIndexRoute
+  TeamsIndexRoute: typeof TeamsIndexRoute
   TemplatesIndexRoute: typeof TemplatesIndexRoute
 }
 
@@ -225,6 +251,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetsSetIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/teams/': {
+      id: '/teams/'
+      path: '/teams'
+      fullPath: '/teams/'
+      preLoaderRoute: typeof TeamsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teams/join': {
+      id: '/teams/join'
+      path: '/teams/join'
+      fullPath: '/teams/join'
+      preLoaderRoute: typeof TeamsJoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/templates/': {
       id: '/templates/'
       path: '/templates'
@@ -243,8 +283,10 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   RegisterRoute: RegisterRoute,
   SetsSetIdRoute: SetsSetIdRoute,
+  TeamsJoinRoute: TeamsJoinRoute,
   ProfileIndexRoute: ProfileIndexRoute,
   SetsIndexRoute: SetsIndexRoute,
+  TeamsIndexRoute: TeamsIndexRoute,
   TemplatesIndexRoute: TemplatesIndexRoute,
 }
 export const routeTree = rootRouteImport

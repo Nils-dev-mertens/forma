@@ -1,13 +1,47 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
-// Users table
+// Teams table - each team is a company/organization workspace. Assets are shared
+// across members; roles control what each member can do:
+//   admin  - full access incl. member management + team deletion
+//   editor - create/edit/delete sets, templates, records, generate images
+//   viewer - read-only (can see images/sets/templates)
+// New signups always create their own team and become its admin (one team per user).
+// @see code/docs/team-design.md
+export const teams = sqliteTable('teams', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  // One-sided FK to break the teams<->users circular reference (users.teamId is
+  // the owning side; the DB-level FK lives in client.ts raw migration).
+  ownerUserId: integer('owner_user_id').notNull(),
+  inviteCode: text('invite_code').notNull().unique(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
+// Team invites - admin-created invite links. A token is the shareable link
+// suffix; when `email` is set the invite targets one specific person.
+export const teamInvites = sqliteTable('team_invites', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  teamId: integer('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  email: text('email'),
+  role: text('role').notNull().default('viewer'),
+  token: text('token').notNull().unique(),
+  createdBy: integer('created_by').notNull().references(() => users.id),
+  acceptedBy: integer('accepted_by').references(() => users.id),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
+});
+
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   email: text('email').notNull().unique(),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   onboardingCompleted: integer('onboarding_completed', { mode: 'boolean' }).notNull().default(false),
+  teamId: integer('team_id').references(() => teams.id, { onDelete: 'set null' }),
+  // "admin" | "editor" | "viewer"; null when the user has no team.
+  teamRole: text('team_role'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(new Date()),
 });
@@ -155,6 +189,10 @@ export const aiLogs = sqliteTable('ai_logs', {
 
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
+  team: one(teams, {
+    fields: [users.teamId],
+    references: [teams.id],
+  }),
   apiKeys: many(apiKeys),
   appData: many(appData),
   templates: many(templates),
@@ -259,7 +297,35 @@ export const aiLogsRelations = relations(aiLogs, ({ one }) => ({
   }),
 }));
 
+export const teamsRelations = relations(teams, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [teams.ownerUserId],
+    references: [users.id],
+  }),
+  members: many(users),
+  invites: many(teamInvites),
+}));
+
+export const teamInvitesRelations = relations(teamInvites, ({ one }) => ({
+  team: one(teams, {
+    fields: [teamInvites.teamId],
+    references: [teams.id],
+  }),
+  creator: one(users, {
+    fields: [teamInvites.createdBy],
+    references: [users.id],
+  }),
+  acceptedByUser: one(users, {
+    fields: [teamInvites.acceptedBy],
+    references: [users.id],
+  }),
+}));
+
 // Types
+export type Team = typeof teams.$inferSelect;
+export type NewTeam = typeof teams.$inferInsert;
+export type TeamInvite = typeof teamInvites.$inferSelect;
+export type NewTeamInvite = typeof teamInvites.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Profile = typeof profiles.$inferSelect;

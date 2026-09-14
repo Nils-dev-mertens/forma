@@ -37,6 +37,8 @@ export async function initializeDatabase() {
         username TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         onboarding_completed INTEGER NOT NULL DEFAULT 0,
+        team_id INTEGER,
+        team_role TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
@@ -55,7 +57,70 @@ export async function initializeDatabase() {
     } catch (error) {
       console.warn("Could not migrate users.onboarding_completed:", error);
     }
-    
+
+    // Teams table - each team is a company/organization workspace. Members have
+    // roles (admin/editor/viewer); see code/docs/team-design.md.
+    db.run(`
+      CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        owner_user_id INTEGER NOT NULL,
+        invite_code TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_user_id) REFERENCES users(id)
+      );
+    `);
+
+    // Teammates' roles live on users.team_role ("admin" | "editor" | "viewer"),
+    // null when the user has no team.
+    try {
+      const existingTeamColumns = sqlite
+        .query("PRAGMA table_info(users)")
+        .all() as Array<{ name: string }>;
+      const hasTeamRole = existingTeamColumns.some((c) => c.name === "team_role");
+      if (!hasTeamRole) {
+        db.run(`ALTER TABLE users ADD COLUMN team_role TEXT;`);
+        console.log("Added users.team_role column");
+      }
+    } catch (error) {
+      console.warn("Could not migrate users.team_role:", error);
+    }
+
+    // Migrate: add team_id column to existing users table
+    try {
+      const existingUserIdColumns = sqlite
+        .query("PRAGMA table_info(users)")
+        .all() as Array<{ name: string }>;
+      const hasTeamId = existingUserIdColumns.some((c) => c.name === "team_id");
+      if (!hasTeamId) {
+        db.run(`ALTER TABLE users ADD COLUMN team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL;`);
+        console.log("Added users.team_id column");
+      }
+    } catch (error) {
+      console.warn("Could not migrate users.team_id:", error);
+    }
+    db.run(`CREATE INDEX IF NOT EXISTS users_team_id_idx ON users(team_id);`);
+
+    // Team invites - admin-created invite links (email-scoped or open).
+    db.run(`
+      CREATE TABLE IF NOT EXISTS team_invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_id INTEGER NOT NULL,
+        email TEXT,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        token TEXT NOT NULL UNIQUE,
+        created_by INTEGER NOT NULL,
+        accepted_by INTEGER,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id),
+        FOREIGN KEY (accepted_by) REFERENCES users(id)
+      );
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS team_invites_team_id_idx ON team_invites(team_id);`);
+
     db.run(`
       CREATE TABLE IF NOT EXISTS api_keys (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

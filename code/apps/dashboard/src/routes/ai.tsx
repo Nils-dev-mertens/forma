@@ -15,6 +15,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { getUser, type Profile } from "@/lib/api/profile";
+import { getTeamProfile } from "@/lib/api/team";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/ai")({ component: AiTemplatePage });
@@ -129,6 +130,20 @@ function AiTemplatePage() {
     enabled: !!user,
   });
 
+  // The team's shared brand profile takes precedence in previews so everyone
+  // sees the same values the server renders with (the owner's profile).
+  const { data: teamProfileData } = useQuery({
+    queryKey: ["team", "profile"],
+    queryFn: async () => {
+      try {
+        return (await getTeamProfile()).profile;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!user,
+  });
+
   const setupKeyMutation = useMutation({
     mutationFn: ({ provider, apiKey }: { provider: string; apiKey: string }) =>
       storeAiKey(provider, apiKey),
@@ -187,8 +202,8 @@ function AiTemplatePage() {
   // original template (with placeholders) stays untouched.
   const previewHtml = useMemo(() => {
     if (!latestHtml) return "";
-    return fillPreview(latestHtml, profileData?.user.profile ?? null);
-  }, [latestHtml, profileData]);
+    return fillPreview(latestHtml, teamProfileData ?? profileData?.user.profile ?? null);
+  }, [latestHtml, profileData, teamProfileData]);
 
   async function handleSetupSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -13,7 +13,8 @@ import {
   getImagesByEntryIdAndTemplateNames,
   getOrphanImagesBySetId,
   getProfileByUserId,
-  getTemplateByName,
+  getTeamProfileUserId,
+  getTemplateByNameForUserIds,
   linkImageToEntry,
   profileToRecords,
   DEFAULT_RENDER_DIMENSIONS,
@@ -29,6 +30,9 @@ import { fireHooks, type HookFailure } from "./hooks.ts";
 
 interface TriggerContext {
   userId: number;
+  /** Team-scoped member ids (incl. the acting user) used to resolve templates
+   * that a teammate owns. Equals [userId] for solo users. */
+  userIds: number[];
   set: Set;
   entry: Entry;
 }
@@ -73,8 +77,11 @@ async function buildGenerationInput(
 ): Promise<TemplateGenerationInput> {
   const records = entryDataToRecords(decodeEntryData(entry));
 
-  // Merge identity profile values into the template records.
-  const profile = await getProfileByUserId(userId);
+  // Merge identity profile values into the template records. The brand
+  // profile is shared team-wide (the team owner's profile is canonical) so
+  // every teammate renders the same images.
+  const profileUserId = (await getTeamProfileUserId(userId)) ?? userId;
+  const profile = await getProfileByUserId(profileUserId);
   if (profile) {
     const profileRecords = profileToRecords(profile);
     for (const [key, value] of Object.entries(profileRecords)) {
@@ -104,25 +111,25 @@ async function buildGenerationInput(
 
 /**
  * Resolve the trigger config's template names against actual templates owned by
- * the user. Missing templates are returned so callers can surface a warning
- * instead of silently dropping them.
+ * any of the team-scoped member ids. Missing templates are returned so callers
+ * can surface a warning instead of silently dropping them.
  */
 async function resolveTemplates(
-  userId: number,
+  userIds: number[],
   actions: TriggerAction[],
 ): Promise<{ valid: TriggerAction[]; missing: string[] }> {
   if (actions.length === 0) return { valid: [], missing: [] };
   const valid: TriggerAction[] = [];
   const missing: string[] = [];
   for (const action of actions) {
-    const t = await getTemplateByName(userId, action.template);
+    const t = await getTemplateByNameForUserIds(userIds, action.template);
     if (t) valid.push(action);
     else missing.push(action.template);
   }
   if (missing.length > 0) {
     logger.warn({
       message: "Trigger references templates that no longer exist for this user",
-      userId,
+      userIds,
       missing,
     });
   }
@@ -178,7 +185,7 @@ async function renderTemplates(
       continue;
     }
     try {
-      const templateRecord = await getTemplateByName(ctx.userId, action.template);
+      const templateRecord = await getTemplateByNameForUserIds(ctx.userIds, action.template);
       const image = await createImage(
         ctx.userId,
         templateRecord?.id ?? null,
@@ -244,7 +251,7 @@ export async function fireTriggers(
 
   const triggers: SetTriggers = decodeSetTriggers(ctx.set);
   const { valid: actions, missing } = await resolveTemplates(
-    ctx.userId,
+    ctx.userIds,
     triggers[event] ?? [],
   );
 
@@ -266,7 +273,7 @@ export async function fireTriggers(
   // event === "modify"
   const templateNames = actions.map((a) => a.template);
   const stale = await getImagesByEntryIdAndTemplateNames(
-    ctx.userId,
+    ctx.userIds,
     ctx.entry.id,
     templateNames,
   );
@@ -314,7 +321,7 @@ export async function cleanupSetImages(
     await deleteImagesRowAndBlob(linked);
     await deleteSetImageDirectory(set.id, entry.id);
   }
-  const orphans = await getOrphanImagesBySetId(set.userId, set.id);
+  const orphans = await getOrphanImagesBySetId([set.userId], set.id);
   deleted.push(...orphans.map((img) => img.name));
   await deleteImagesRowAndBlob(orphans);
   return { deleted };

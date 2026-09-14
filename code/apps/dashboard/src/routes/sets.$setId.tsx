@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { createEntry, deleteEntry, getEntries, getSet, updateEntry, updateSet, deleteSet, testHook, type SetHook, type DisplayHook } from "@/lib/api/sets";
 import { getTemplates } from "@/lib/api/templates";
 import { buildProfilePreviewData, getUser, type Profile } from "@/lib/api/profile";
+import { getTeamProfile } from "@/lib/api/team";
 import { useAuth } from "@/lib/auth";
 import { TemplatePreview } from "@/components/TemplatePreview";
 
@@ -49,16 +50,32 @@ function SetDetailPage() {
     enabled: !!user?.id,
   });
 
+  // The team's shared brand profile takes precedence in previews so everyone
+  // sees the same values that the server actually renders with (the owner's
+  // profile). Falls back to the user's own profile when not in a team.
+  const { data: teamProfileData } = useQuery({
+    queryKey: ["team", "profile"],
+    queryFn: async () => {
+      try {
+        return (await getTeamProfile()).profile;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!user?.id,
+  });
+
   const { data: templatesData } = useQuery({
     queryKey: ["templates"],
     queryFn: () => getTemplates(),
   });
 
-  // Sample/prop data for the live preview: the user's profile fills
+  // Sample/prop data for the live preview: the profile fills
   // `{{ profile.* }}` placeholders, and the entry form values fill the
   // template-specific placeholders. This is what makes the template-specific
   // `{{ }}` render even before an entry is saved.
-  const profile = userData?.user.profile ?? (null as Profile | null);
+  const profile =
+    teamProfileData ?? userData?.user.profile ?? (null as Profile | null);
   const previewData: Record<string, string> = {
     ...buildProfilePreviewData(profile),
     ...formData,

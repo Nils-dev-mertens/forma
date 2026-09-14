@@ -13,7 +13,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string, inviteToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   finishOnboarding: (data: {
     displayName?: string;
@@ -51,8 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     redirectAfterAuth(data.user);
   };
 
-  const register = async (username: string, email: string, password: string) => {
-    const data = await registerUser(username, email, password);
+  const register = async (username: string, email: string, password: string, inviteToken?: string) => {
+    const data = await registerUser(username, email, password, inviteToken);
     setUser(data.user);
     redirectAfterAuth(data.user);
   };

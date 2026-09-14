@@ -8,6 +8,9 @@ export const origin =
     process.env.ORIGIN != undefined
         ? process.env.ORIGIN
         : `http://localhost:${port}`;
+// Public base URL of the dashboard, used to build shareable links (team invites).
+// Defaults to the API origin so single-origin setups (nginx gateway) work out of the box.
+export const dashboardOrigin = process.env.DASHBOARD_URL ?? origin;
 
 export const aiEncryptionKey : string | undefined = process.env.AI_ENCRYPTION_KEY;
 export const aiDefaultModel : string = process.env.AI_DEFAULT_MODEL ?? "gpt-4o-mini";

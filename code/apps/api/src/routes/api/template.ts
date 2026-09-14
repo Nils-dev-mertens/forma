@@ -6,7 +6,8 @@ import { Router } from "express";
 import { readFile } from "fs/promises";
 import multer from "multer";
 import path from "path";
-import { createTemplate, getTemplateByName, getTemplatesByUserId } from "@repo/db";
+import { createTemplate, getTemplateByNameForUserIds, getTemplatesByUserIds } from "@repo/db";
+import { getScopedUserIds, canEditContent } from "../../utils/auth.ts";
 
 const router: Router = Router();
 
@@ -55,7 +56,7 @@ router.get("/", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const templates = await getTemplatesByUserId(userId);
+    const templates = await getTemplatesByUserIds(getScopedUserIds(res));
     return res.json({ success: true, templates });
   } catch (error) {
     logger.error({ error: error as Error });
@@ -123,6 +124,10 @@ router.post("/upload", upload.single("template"), async (req, res) => {
         const userId = res.locals.user?.id;
         if (!userId) {
             res.status(401).send("Unauthorized");
+            return;
+        }
+        if (!canEditContent(res)) {
+            res.status(403).send("Viewers cannot upload templates");
             return;
         }
 
@@ -204,8 +209,8 @@ router.get("/fields/:template", async (req, res) => {
             return res.status(401).send("Unauthorized");
         }
         
-        // Check if user owns this template
-        const templateRecord = await getTemplateByName(userId, templatename);
+        // Check if user owns this template (team-aware: any teammate's template)
+        const templateRecord = await getTemplateByNameForUserIds(getScopedUserIds(res), templatename);
         if (!templateRecord) {
             return res.status(403).send({ message: "Access denied or template not found" });
         }

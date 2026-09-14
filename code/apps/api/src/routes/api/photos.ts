@@ -1,6 +1,7 @@
 import { getGeneratedImage } from "@repo/storage";
 import {Router} from "express"
-import { getImageByName } from "@repo/db";
+import { getImageByNameForUserIds } from "@repo/db";
+import { getScopedUserIds } from "../../utils/auth.ts";
 
 const router:Router = Router(); 
 
@@ -62,8 +63,8 @@ router.get("/:imagename", async (req, res) => {
             return;
         }
         
-        // Check if user owns this image
-        const imageRecord = await getImageByName(userId, imagename);
+        // Check if user owns this image (team-aware: any teammate's image)
+        const imageRecord = await getImageByNameForUserIds(getScopedUserIds(res), imagename);
         if (!imageRecord) {
             res.status(403).send("Access denied");
             return;

@@ -4,11 +4,17 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useAuth } from "@/lib/auth"
 
-export const Route = createFileRoute("/register")({ component: RegisterPage })
+export const Route = createFileRoute("/register")({
+  validateSearch: (search: Record<string, unknown>): { inviteToken?: string } => ({
+    inviteToken: typeof search.inviteToken === "string" ? search.inviteToken : undefined,
+  }),
+  component: RegisterPage,
+})
 
 function RegisterPage() {
   const { register, user, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const { inviteToken } = Route.useSearch()
   const [username, setUsername] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -38,7 +44,7 @@ function RegisterPage() {
 
     setIsLoading(true)
     try {
-      await register(username.trim(), email.trim(), password)
+      await register(username.trim(), email.trim(), password, inviteToken)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register")
     } finally {
@@ -51,7 +57,11 @@ function RegisterPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Create an account</CardTitle>
-          <CardDescription>Get started with your free Forma account</CardDescription>
+          <CardDescription>
+            {inviteToken
+              ? "Create an account to accept your team invite."
+              : "Get started with your free Forma account"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">

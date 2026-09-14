@@ -14,10 +14,15 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
-export async function registerUser(username: string, email: string, password: string): Promise<AuthResponse> {
+export async function registerUser(
+  username: string,
+  email: string,
+  password: string,
+  inviteToken?: string
+): Promise<AuthResponse> {
   return apiFetch<AuthResponse>("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify({ username, email, password }),
+    body: JSON.stringify({ username, email, password, inviteToken }),
   });
 }
 

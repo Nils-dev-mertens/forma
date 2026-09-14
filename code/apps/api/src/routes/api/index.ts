@@ -1,6 +1,6 @@
 import { CheckKey } from "@repo/auth";
 import { logger } from "@repo/logger";
-import {Router, type RequestHandler} from "express"
+import { Router, type RequestHandler } from "express"
 import { nodeEnv } from "../../config.ts";
 import templateroute from "./template"
 import imageGenerationRoute from "./generation/image"
@@ -10,6 +10,7 @@ import userRoute from "./users"
 import setRoute from "./set"
 import aiRoute from "./ai"
 import authRoute from "./auth"
+import teamRoute from "./team"
 
 const router:Router = Router();
 
@@ -19,12 +20,34 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
     // Session-based auth takes priority for the dashboard.
     const sessionUserId = (req.session as any)?.userId;
     if (sessionUserId) {
+        // Resolve the user's team scope + role. When they are a member of a
+        // team, teamMemberIds is their teammates' ids (including their own) so
+        // downstream routes can share the whole team's workspace.
+        let teamMemberIds: number[] = [sessionUserId];
+        let teamRole: string | null = null;
+        try {
+            const { getTeamMemberIdsForUser, getTeamRoleForUser } = await import("@repo/db");
+            const [ids, role] = await Promise.all([
+                getTeamMemberIdsForUser(sessionUserId),
+                getTeamRoleForUser(sessionUserId),
+            ]);
+            teamMemberIds = ids.length > 0 ? ids : [sessionUserId];
+            teamRole = role;
+        } catch (error) {
+            logger.warn({
+                message: "Failed to resolve team scope for session user (continuing as solo)",
+                userId: sessionUserId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
         res.locals.user = {
             id: sessionUserId,
             keyId: null,
             keyPrefix: null,
             authenticated: true,
-            authenticationMethod: "session"
+            authenticationMethod: "session",
+            teamMemberIds,
+            teamRole
         };
         return next();
     }
@@ -102,13 +125,35 @@ export const AuthHandler: RequestHandler = async (req, res, next) => {
         const keyData = await getApiKeyByKey(keyString);
 
         if (keyData) {
+            // Resolve the key-owner's team scope (same as the session branch) so
+            // team-shared endpoints behave identically for API keys.
+            let teamMemberIds: number[] = [keyData.userId];
+            let teamRole: string | null = null;
+            try {
+                const { getTeamMemberIdsForUser, getTeamRoleForUser } = await import("@repo/db");
+                const [ids, role] = await Promise.all([
+                    getTeamMemberIdsForUser(keyData.userId),
+                    getTeamRoleForUser(keyData.userId),
+                ]);
+                teamMemberIds = ids.length > 0 ? ids : [keyData.userId];
+                teamRole = role;
+            } catch (error) {
+                logger.warn({
+                    message: "Failed to resolve team scope for api key user (continuing as solo)",
+                    userId: keyData.userId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+
             // Store user information in res.locals for downstream middleware/routes
             res.locals.user = {
                 id: keyData.userId,
                 keyId: keyData.id,
                 keyPrefix: keyString.substring(0, 10) + "...",
                 authenticated: true,
-                authenticationMethod: "api_key"
+                authenticationMethod: "api_key",
+                teamMemberIds,
+                teamRole
             };
 
             // Log successful authentication with user context
@@ -163,5 +208,6 @@ router.use("/users", userRoute)
 router.use("/set", setRoute)
 router.use("/ai", aiRoute)
 router.use("/auth", authRoute)
+router.use("/team", teamRoute)
 
 export default router;

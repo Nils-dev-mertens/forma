@@ -7,7 +7,11 @@ import {
   getUserById,
   markOnboardingComplete,
   updateProfile,
+  createTeam,
+  acceptInvite,
+  deleteUser,
   type User,
+  type Team,
 } from "@repo/db"
 import { hashPassword, verifyPassword } from "@repo/auth"
 
@@ -51,6 +55,7 @@ function formatAuthUser(user: User): AuthUser {
  *               username: { type: string }
  *               email: { type: string }
  *               password: { type: string }
+ *               inviteToken: { type: string, description: Optional team invite token; when present the user joins that team instead of creating one }
  *     responses:
  *       201:
  *         description: User registered and logged in
@@ -62,6 +67,12 @@ function formatAuthUser(user: User): AuthUser {
 router.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body
+    // Optional team invite token (T5): when present the new user joins that
+    // team at the invite's role instead of getting their own team.
+    const inviteToken =
+      typeof req.body?.inviteToken === "string" && req.body.inviteToken.trim() !== ""
+        ? req.body.inviteToken.trim()
+        : undefined
 
     if (!username || typeof username !== "string" || username.trim() === "") {
       return res.status(400).json({ error: "Username is required" })
@@ -92,17 +103,37 @@ router.post("/register", async (req, res) => {
       return res.status(500).json({ error: "Failed to create user" })
     }
 
+    // Team membership (T1/T10): one team per user. Without an invite the user
+    // becomes the admin of a brand-new team.
+    let team: Team | null = null
+    if (inviteToken) {
+      const result = await acceptInvite(newUser.id, inviteToken, email.trim())
+      if (!result.ok) {
+        await deleteUser(newUser.id)
+        return res.status(result.status).json({ error: result.error })
+      }
+      team = result.team
+    } else {
+      team = await createTeam(`${username.trim()} Team`, newUser.id)
+      if (!team) {
+        await deleteUser(newUser.id)
+        return res.status(500).json({ error: "Failed to create team" })
+      }
+    }
+
     ;(req as any).session = { ...(req as any).session, userId: newUser.id }
 
     logger.info({
       message: "User registered",
       userId: newUser.id,
       username: newUser.username,
+      teamId: team.id,
     })
 
     return res.status(201).json({
       success: true,
       user: formatAuthUser(newUser),
+      team,
     })
   } catch (error) {
     logger.error({ message: "Failed to register user", error })

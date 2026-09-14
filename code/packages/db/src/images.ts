@@ -17,11 +17,11 @@ export async function createImage(userId: number, templateId: number | null, nam
 }
 
 // Get an image by name for a specific user
-export async function getImageByName(_userId: number, name: string): Promise<Image | null> {
+export async function getImageByName(userId: number, name: string): Promise<Image | null> {
   const result = await db
     .select()
     .from(images)
-    .where(eq(images.name, name))
+    .where(and(eq(images.userId, userId), eq(images.name, name)))
     .limit(1);
   
   return result[0] || null;
@@ -73,11 +73,13 @@ export async function getImagesByEntryId(entryId: number): Promise<Image[]> {
 // orphans left behind when a render's DB row was created but the entry link
 // step failed (or legacy images predate entry linking). Parsing generationData
 // in JS keeps this portable instead of relying on SQLite's json_extract.
+// Team-aware: passes the scoped member ids so teammates' orphaned images are
+// included.
 export async function getOrphanImagesBySetId(
-  userId: number,
+  userIds: number[],
   setId: number,
 ): Promise<Image[]> {
-  const all = await getImagesByUserId(userId);
+  const all = await getImagesByUserIds(userIds);
   return all.filter((img) => {
     if (img.entryId !== null) return false;
     if (!img.generationData) return false;
@@ -95,19 +97,20 @@ export async function getOrphanImagesBySetId(
 }
 
 // Get an entry's images filtered to a specific list of template names owned
-// by a user. Resolves names -> template ids in one query, then joins by
-// images.templateId so we never have to parse generationData JSON.
+// by any of the given (team-scoped) user ids. Resolves names -> template ids
+// in one query, then joins by images.templateId so we never have to parse
+// generationData JSON.
 export async function getImagesByEntryIdAndTemplateNames(
-  userId: number,
+  userIds: number[],
   entryId: number,
   templateNames: string[],
 ): Promise<Image[]> {
-  if (templateNames.length === 0) return [];
+  if (templateNames.length === 0 || userIds.length === 0) return [];
   const templateRows = await db
     .select({ id: templates.id })
     .from(templates)
     .where(
-      and(eq(templates.userId, userId), inArray(templates.name, templateNames)),
+      and(inArray(templates.userId, userIds), inArray(templates.name, templateNames)),
     );
   const ids = templateRows.map((row) => row.id);
   if (ids.length === 0) return [];
@@ -115,4 +118,31 @@ export async function getImagesByEntryIdAndTemplateNames(
     .select()
     .from(images)
     .where(and(eq(images.entryId, entryId), inArray(images.templateId, ids)));
+}
+
+// Team-aware: get an image by name owned by any of the given team member user
+// ids. A team is a shared, editable workspace with no permission tiers - every
+// asset any team member owns is readable/editable by any teammate.
+// @see code/packages/db/src/teams.ts
+export async function getImageByNameForUserIds(
+  userIds: number[],
+  name: string,
+): Promise<Image | null> {
+  if (userIds.length === 0) return null;
+  const result = await db
+    .select()
+    .from(images)
+    .where(and(inArray(images.userId, userIds), eq(images.name, name)))
+    .limit(1);
+  return result[0] || null;
+}
+
+// Team-aware: get all images owned by any of the given team member user ids.
+export async function getImagesByUserIds(userIds: number[]): Promise<Image[]> {
+  if (userIds.length === 0) return [];
+  return await db
+    .select()
+    .from(images)
+    .where(inArray(images.userId, userIds))
+    .orderBy(images.createdAt);
 }

@@ -1,6 +1,6 @@
 import { db } from "./client.ts";
 import { sets, type NewSet, type Set } from "./schema.ts";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 /**
  * Supported field types for set entries. Strings flow in / out via JSON, so
@@ -176,6 +176,18 @@ export async function getSetsByUserId(userId: number): Promise<Set[]> {
     .select()
     .from(sets)
     .where(eq(sets.userId, userId))
+    .orderBy(sets.createdAt);
+}
+
+// Team-scoped: return sets owned by any of the given user ids (i.e. all team
+// members). A team is a shared workspace with no permission tiers - every asset
+// a team member owns is readable/editable by any teammate.
+export async function getSetsByUserIds(userIds: number[]): Promise<Set[]> {
+  if (userIds.length === 0) return [];
+  return db
+    .select()
+    .from(sets)
+    .where(inArray(sets.userId, userIds))
     .orderBy(sets.createdAt);
 }
 

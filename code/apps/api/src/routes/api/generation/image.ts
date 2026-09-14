@@ -8,10 +8,12 @@ import path, { join } from "path"
 import { origin } from "../../../config";
 import {
   createImage,
-  getTemplateByName,
+  getTemplateByNameForUserIds,
   getProfileByUserId,
+  getTeamProfileUserId,
   profileToRecords,
 } from "@repo/db";
+import { getScopedUserIds, canEditContent } from "../../../utils/auth.ts";
 import { imagePathToDataUrl } from "../../../services/imageDataUrls.ts";
 
 const router: Router = Router();
@@ -30,7 +32,10 @@ async function mergeProfileIntoRecords(
     userId: number,
     records: Record<string, string>,
 ): Promise<Record<string, string>> {
-    const profile = await getProfileByUserId(userId);
+    // The brand profile is shared team-wide (the team owner's profile is
+    // canonical) so every teammate renders the same images.
+    const profileUserId = (await getTeamProfileUserId(userId)) ?? userId;
+    const profile = await getProfileByUserId(profileUserId);
     if (!profile) return records;
 
     const profileRecords = profileToRecords(profile);
@@ -149,6 +154,13 @@ router.post("/", upload.array("images"), async (req, res) => {
 
         const userId = res.locals.user?.id;
 
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+        if (!canEditContent(res)) {
+            return res.status(403).json({ error: "Viewers cannot generate images." });
+        }
+
         // Merge identity profile values into the template records
         if (input.data?.records && userId) {
             input.data.records = await mergeProfileIntoRecords(userId, input.data.records);
@@ -156,7 +168,7 @@ router.post("/", upload.array("images"), async (req, res) => {
 
         // Verify template ownership if template is specified
         if (input.templatename) {
-            const templateRecord = await getTemplateByName(userId!, input.templatename);
+            const templateRecord = await getTemplateByNameForUserIds(getScopedUserIds(res), input.templatename);
             if (!templateRecord) {
                 return res.status(403).send("You don't have access to this template");
             }
@@ -168,7 +180,7 @@ router.post("/", upload.array("images"), async (req, res) => {
         // Get template ID from the template name
         let templateId = null;
         if (input.templatename) {
-            const templateRecord = await getTemplateByName(userId!, input.templatename);
+            const templateRecord = await getTemplateByNameForUserIds(getScopedUserIds(res), input.templatename);
             templateId = templateRecord?.id || null;
         }
         
@@ -264,6 +276,10 @@ router.post("/strict", async (req, res) => {
             res.status(400).send("Missing input or imagename");
             return;
         }
+        if (!canEditContent(res)) {
+            res.status(403).json({ error: "Viewers cannot generate images." });
+            return;
+        }
 
         // Merge identity profile values into the template records
         if (input.data?.records) {
@@ -272,7 +288,7 @@ router.post("/strict", async (req, res) => {
 
         // Verify template ownership if template is specified
         if (input.templatename) {
-            const templateRecord = await getTemplateByName(userId, input.templatename);
+            const templateRecord = await getTemplateByNameForUserIds(getScopedUserIds(res), input.templatename);
             if (!templateRecord) {
                 return res.status(403).send("You don't have access to this template");
             }
@@ -284,7 +300,7 @@ router.post("/strict", async (req, res) => {
         // Get template ID from the template name
         let templateId = null;
         if (input.templatename) {
-            const templateRecord = await getTemplateByName(userId, input.templatename);
+            const templateRecord = await getTemplateByNameForUserIds(getScopedUserIds(res), input.templatename);
             templateId = templateRecord?.id || null;
         }
         
